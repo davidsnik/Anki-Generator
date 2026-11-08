@@ -1,58 +1,31 @@
 # Configuration
 
-Phase 0 uses TOML, read with Python's standard-library `tomllib` and validated with
-Pydantic. This avoids a YAML dependency and keeps supported settings explicit.
-Only discovery settings are implemented. [default.toml](default.toml) documents
-the built-in defaults, including supported extensions and excluded directory names.
-Recognizing an extension does not provide a parser for that format.
+Regular GUI settings are persisted as validated, non-secret SQLite records.
+Settings includes stage-specific models, reasoning effort, revision bounds,
+generation criteria, role influence, document processing, theme, storage diagnostics
+and backup. Courses copy global generation defaults at creation and retain explicit
+independent preferences thereafter.
 
-The CLI uses built-in defaults unless a file is explicitly supplied:
+Application configuration is defined in services/settings.py and domain.py.
+Extraction limits are validated by ingestion/contracts.py. Provider keys are not
+configuration records: use the GUI session store or an available secure OS keyring.
+OPENAI_API_KEY is an optional externally supplied alternative; no .env loader is used.
+Runs retain effective non-secret settings and source snapshots for reproducibility.
 
-```sh
-uv run anki-generator inspect fixtures/example-course --output /tmp/anki-inspect \
-  --config config/default.toml
-```
+Prompt templates are separate packaged resources. Source role weights influence
+importance/understanding, never bypass factual checks. Natural-language course
+guidance is constrained by the same evidence and verification policy.
 
-There is no automatic loading from the repository or course directory. A supplied
-file may override either discovery setting; omitted settings keep their defaults.
-Unknown sections/keys and invalid values are rejected. The supported shape is:
+## Standalone discovery
 
-```toml
-[discovery]
-supported_extensions = [".pdf", ".md", ".txt"]
-excluded_directory_names = [".git", ".venv", "__pycache__", "output", "outputs", "runs"]
-```
+The original inspect command uses built-in TOML-compatible discovery defaults.
+config/default.toml documents them and is loaded only when explicitly selected:
 
-Configured extensions are unique lowercase suffixes with a leading dot; filename
-matching is case-insensitive. Directory exclusions are names, not paths; they apply
-recursively. The requested output directory and
-directories marked with `.anki-generator-output` are also excluded independently
-of this setting. All nested symlinks are skipped. A user-selected input root may
-resolve through a symlink; output directories and manifests must not be symlinks.
+    uv run anki-generator inspect fixtures/example-course --output outputs/example --config config/default.toml
 
-Configuration affects file selection, not document content interpretation. Keep
-reproducible application configuration under version control; keep private course
-paths, preferences containing private data, and credentials in ignored local files.
-No API key or external service is required for the initial CLI. The JSON manifest
-has no timestamps or absolute source paths; identical tree contents, settings, and
-exclusions produce identical output bytes. Existing manifests require the explicit
-`--overwrite` flag, even when a valid output directory already exists.
-
-## Future separation
-
-Add settings only alongside behavior that consumes and tests them. General
-application configuration will define processing policies, resource limits, model
-selection and reasoning effort, verification requirements, and export behavior.
-Course-specific preferences will define scope, learning level, terminology,
-language, card styles, and explanation depth. Define and document precedence before
-introducing overlapping configuration layers.
-
-Provider secrets belong in environment variables or another explicit local secret
-mechanism, never committed TOML or prompts. Prompt templates live in `prompts/`;
-business rules live in application code. Future runs must preserve the effective
-non-secret settings and relevant versions so outputs can be audited and resumed.
-
-Changing settings that affect an artifact must invalidate that artifact's cache.
-External processing must make clear which material is sent to the configured
-provider. See [requirements](../docs/requirements.md) for the privacy contract and
-[architecture](../docs/architecture.md) for stage boundaries.
+Only supported_extensions and excluded_directory_names apply to standalone
+discovery. Unknown keys are rejected. Extension recognition does not mean parsing.
+The CLI skips nested symlinks, requested/marked output directories and configured
+directory names. Existing manifests require --overwrite; output may not equal or
+contain input. Identical inputs/exclusions yield identical version-1 JSON.
+This TOML does not override graphical-application settings.

@@ -11,6 +11,11 @@ htmlcov/
 build/
 dist/
 .uv-cache/
+node_modules/
+/frontend/playwright-report/
+/frontend/test-results/
+/src/anki_generator/web_assets/
+.tools/
 
 # Secrets and local assistant state
 .env

@@ -1,150 +1,93 @@
 # Architecture
 
-## Current implementation
+## Runtime and boundaries
 
-`anki_generator` is a Python package in `src/`, exposed through the
-`anki-generator` Typer command. The implemented flow is:
+run.sh launches anki-generator serve. FastAPI serves the built React/Vite frontend
+and a same-origin JSON API. One local worker polls SQLite for durable jobs. There
+is no Redis, external database or request-scoped long-running background task.
+The existing inspect CLI remains independent and entirely local.
 
-```text
-directory + validated discovery settings
-    -> deterministic file discovery and SHA-256 hashing
-    -> Pydantic manifest
-    -> versioned JSON output
-```
+The established src/anki_generator/ package is retained:
 
-The CLI handles arguments and feedback; ingestion code handles discovery; models
-define serialized contracts. No parser, model client, pipeline framework, or
-speculative stage modules are needed for this flow. TOML configuration uses the
-standard library and validates only settings discovery actually consumes.
+| Layer | Location and responsibility |
+| --- | --- |
+| Interface | frontend/src: routed React views, TanStack Query, reusable accessible controls, KaTeX, source previews and light/dark themes |
+| HTTP | api/: validation, host/origin/CSRF guards, CRUD, streaming upload limits, progress and downloads |
+| Application | services/: credentials/settings, evidence-aware revisions/reviews, storage and export policy |
+| Persistence | database/: SQLAlchemy entities, SQLite/WAL and versioned Alembic migrations |
+| Ingestion | ingestion/: original discovery plus subprocess-bounded extraction and visual regions |
+| Reasoning | llm/, processing/: official Responses SDK, typed contracts, evidence validation and concrete stage modules |
+| Orchestration | orchestration/: persisted queue, worker, safe checkpoints and restart recovery |
+| Prompts | src/anki_generator/prompts/: packaged versioned templates, separate from course data |
 
-`manifest.json` uses schema version `"1"` and hash algorithm `"sha256"`. Each
-document has `relative_path`, `file_type`, `size_bytes`, and `sha256`. Paths are
-normalized relative POSIX paths without traversal; the lowercase type must match
-the filename suffix and hashes contain exactly 64 lowercase hexadecimal characters.
-Pydantic tuples serialize as JSON arrays. Documents and excluded directory paths
-are sorted and unique; unsupported/symlink counts describe skipped entries.
+The frontend uses scoped CSS and reusable native controls instead of a Tailwind/
+shadcn stack, keeping the local dependency/build surface smaller while retaining
+consistent design tokens, responsive layouts and interaction states. React owns UI
+state; TanStack Query synchronizes server state. Provider keys are never exposed by GETs.
 
-The manifest contains no timestamps or absolute source-root metadata. Consumers
-must explicitly supply the source root and validate file hashes before using
-records in later stages; a manifest alone cannot locate or guarantee unchanged
-source bytes. Identical inputs and exclusions produce identical JSON bytes. An
-output marker prevents later scans from treating generated runs as source material.
+## Implemented pipeline
 
-Discovery skips all nested symlinks; an explicitly supplied root may resolve through
-one. Output is rejected when it equals or contains the input, and output/manifest
-symlinks are rejected. Errors abort instead of writing a partial manifest; explicit
-`--overwrite` is required to replace one. Publication is atomic; a write failure
-may leave an empty marked output directory, but never a partially written manifest.
-Ordinary concurrent content changes are
-detected during hashing where possible; discovery is not a filesystem snapshot
-and does not defend against a hostile process changing the tree concurrently.
-
-No-clobber publication requires hard-link support on the output filesystem; an
-unsupported filesystem produces a visible error rather than a weaker write.
-
-A discovery manifest inventories bytes, not document meaning. A successful scan
-does not establish readability, extraction quality, course coverage, or factual
-correctness. Supported discovery extensions are defined in configuration.
-
-## Planned processing pipeline
-
-Use a deterministic Python orchestrator to run explicit stages. Specialized LLM
-tasks receive bounded inputs, evidence, and validated output schemas; they do not
-choose arbitrary actions or determine whether their own work is approved.
-
-The following are **future contracts**, not existing classes or implemented APIs.
-Introduce concrete models when each stage is implemented.
-
-| Stage | Responsibility and input → output | Failure policy |
+| Stage | Input → output | Failure and quality behavior |
 | --- | --- | --- |
-| 1. Discovery and ingestion | Course directory → source records, hashes, immutable source snapshots or verified references | Report unreadable or unsupported sources and output conflicts; never imply full coverage after an incomplete scan. |
-| 2. Structured extraction | Source record + original bytes → page/span/region blocks, equations, figures, reading order, extraction diagnostics | Retain original pages and uncertain alternatives; route failed or ambiguous regions to another extractor or review. |
-| 3. Course knowledge map | Extracted blocks + syllabus/exercise evidence → topics, prerequisites, learning targets, importance rationale | Record competing interpretations and unmapped documents; do not infer absent content as covered. |
-| 4. Knowledge extraction | Map + source blocks → normalized claims, definitions, conditions, methods, evidence links | Reject unsupported claims; retain conflicts and uncertain notation for resolution. |
-| 5. Candidate generation | Supported knowledge items + style preferences → candidate cards with target, answer, explanation, evidence | Validate structured output; bounded retries for malformed responses; keep rejected candidates and reasons. |
-| 6. Independent verification | Candidates + original evidence → factual verdicts, pedagogical verdicts, issues | Check independently of generation; unsupported or uncertain correctness blocks approval. Tool/provider failure is a failed check, not a pass. |
-| 7. Deduplication and coverage | Verified candidates + course map → duplicate groups, uncovered targets, audit report | Preserve disputed near-duplicates; distinguish missing knowledge from excluded scope and extraction failures. |
-| 8. Targeted revision | Specific issues/gaps + evidence → revised candidates and change history | Reverify changed claims; bound revision loops and escalate unresolved issues. |
-| 9. Human review | Uncertain/selected candidates + issues + source view → recorded decisions and edits | Preserve pending state and reviewer rationale; edits invalidate affected checks. |
-| 10. Anki export | Approved records + persistent identities + media → package and update report | Validate mathematics/media/IDs, write atomically, and fail safely without modifying an existing collection. |
+| Import/discovery | Categorized files → hash-addressed originals and stable document records | Reject traversal/unsafe ZIPs; report unsupported formats/duplicates; preserve role/authority |
+| Extraction | Original + settings → pages, blocks, geometry, tiles, diagnostics | Subprocess limits; incomplete regions stay partial/unresolved; preserve originals |
+| Visual interpretation | Suspicious original tiles and text → transcription, equations, uncertainty | Consent/key required; preserve original images and uncertain alternatives |
+| Document understanding | Role-aware sections → concepts, competencies and evidence | Validate actual document/page/region/quotes; retain conflicts and assumptions |
+| Course synthesis | Document analyses → hierarchy and relationships | Stable semantic IDs, terminology reconciliation, exercise frequency and importance rationale |
+| Generation | Consolidated concepts/evidence/preferences → basic/cloze candidates | Learning-target identities independent of wording; preserve manual work |
+| Factual review | Candidate + original evidence → verdict/issues | Independent call; missing/contradictory evidence blocks verification |
+| Pedagogical review | Candidate + criteria → clarity/atomicity/transfer verdict | Separate prompt/call and actionable issues |
+| Mathematics | Mathematical card + evidence → review and suitable symbolic checks | Limited AST-to-SymPy grammar; no evaluation of arbitrary strings; undecidable is not proof |
+| Revision | Issues + candidate + evidence → next revision | Finite attempts; recheck changed content; failures remain reviewable |
+| Deduplication | Retrieved card pairs → semantic decisions | Similar vocabulary alone never removes a card; preserve distinct targets |
+| Coverage | Inventory + verified mappings → gaps/overlap report | Include exercise methods and unresolved sources; bounded targeted filling |
+| Human review | Card, source, revisions and checks → edits/decisions | Edits invalidate old checks; overrides need rationale; failed/duplicate cards cannot be approved |
+| Export | Eligible notes/media → .apkg, JSON/CSV, history | Persistent GUID/model/deck IDs, safe templates/media; no live collection writes |
 
-## Contracts and provenance
+## Reliability and identity
 
-Each stage accepts and returns typed, validated records with an explicit schema
-version. Keep original content and evidence references available across stages:
+Runs snapshot source hashes/roles/authority/links, criteria, models and extraction
+settings. Changed inputs require a fresh run. Stages, diagnostics, usage and response
+artifacts survive requests and restarts. Interrupted running jobs become paused.
+Pause/cancel takes effect at a safe boundary rather than halfway through an API
+request or atomic database update. Run responses include a mode-specific pending
+stage plan before the worker starts. Conditional visual, mathematical and repair
+work is labeled; missing stages become skipped after successful completion or
+not-run after cancellation. Planned rows omit unknown item totals and never
+replace recorded stage counts, statuses or diagnostics. Failed and paused runs
+retain pending future work for retry/resumption. This is a read-only view, not
+invented checkpoints or a percentage estimate.
 
-- A source record identifies a document, its course-relative location, hash,
-  content revision, and extraction status.
-- A source location identifies a page and/or text span or image region. Coordinate
-  systems and page numbering must be explicit; unknown fields stay unknown.
-- Evidence links a knowledge item or card claim to source locations and relevant
-  context. Evidence may support a claim, conflict with it, or be insufficient.
-- Knowledge items and cards have stable IDs, revision history, and links to their
-  learning targets. Persistent Anki note IDs are separate from display wording.
-- Verification records identify the check, verdict, issues, evidence inspected,
-  model/tool version, and the exact candidate revision checked.
-- Model runs record prompt version/hash, model identifier, relevant parameters,
-  validated response, usage, and errors. Human decisions have separate status.
+Extraction keys include source hash and extraction settings/version. Model cache
+keys include stage, prompt content, schema, evidence/payload, images, model and
+reasoning settings. Recorded responses avoid repeated calls but do not guarantee
+identical new requests. A crash before checkpointing a successful request can repeat
+that request. Unrelated extraction remains reusable after criteria/source changes.
 
-Schema evolution must use explicit versions and migration rules. A content hash
-detects changes and enables cache reuse; it does not replace persistent identity.
-A renamed document and an edited card both need deliberate reconciliation rules.
+Course/document/card IDs and note GUIDs persist in SQLite. Hashes identify byte
+revisions, not permanent Anki identities. Concepts/cards reconcile semantic targets;
+model identity drift can still need human reconciliation. Human edits preserve note
+GUIDs. Schema changes require Alembic migrations, never runtime create_all changes.
 
-## Deterministic work and model reasoning
+The original version-1 discovery manifest remains sorted and free of absolute root
+paths/timestamps. It inventories bytes, not extracted meaning.
 
-Python should own path safety, hashing, parsing, schema validation, artifact writes,
-cache keys, retry limits, state transitions, IDs, and export. Use parsers and
-deterministic mathematics checks where they can reliably answer the question.
+## Security, privacy and evaluation
 
-Models are appropriate for ambiguous layout/handwriting interpretation, semantic
-course mapping, evidence-supported knowledge extraction, useful retrieval prompts,
-and contextual reviews. Vision may be necessary even when a PDF has a text layer.
-Model output is an interpretation requiring validation, never a replacement for
-the original source. Independent review must receive evidence and may disagree.
+Loopback, host/origin validation and per-process CSRF protect the interface. Streaming
+body and ZIP member/path/size/ratio limits precede parsing. Extraction has file/page/
+pixel/CPU/memory/time budgets. Original files remain immutable. Card HTML is escaped;
+mathematics rendering disables unsafe trust. Source text never supplies executable
+instructions or tool permissions.
 
-## Artifacts, resumption, and scale
+Keys live in session memory or a supported secure OS keyring, optionally the
+environment. No plaintext key persistence exists. GUI consent discloses transmission.
+Curated provider errors exclude keys. Backups include private course data and omit
+credentials. Use one backend process per data directory and a trusted local user;
+this is not a hosted multi-user service. The data tree is assumed stable rather
+than hostile concurrently rewritten. Discovery no-clobber writes require hard links.
 
-Keep stage outputs, diagnostics, input hashes, and run metadata so a developer can
-inspect and rerun a stage independently. Start with readable local artifacts;
-consider SQLite when persistent identities, cross-run queries, and transactional
-updates require it. Do not introduce storage abstractions before that need exists.
-
-Cache keys must include source revision, stage/schema version, configuration, and
-relevant prompt/model/extractor versions. Rerun only affected descendants; manual
-edits and new evidence invalidate relevant verification. Reusing a recorded model
-response is reproducible; requesting a new response is not guaranteed identical.
-
-For large courses, extract and process bounded document/page groups, then combine
-their evidence into course-level analysis. Preserve cross-document links and
-diagnostics. Add limited concurrency, checkpoints, and usage reporting after the
-small evaluation slice establishes correctness. Never silently drop a failed page
-to make a run appear complete.
-
-## Configuration and safety boundaries
-
-Keep application settings, course preferences, prompt templates, model choices,
-and pedagogical policy separate. See [configuration](../config/README.md) and
-[prompt conventions](../prompts/README.md). No course-specific facts belong in code.
-
-Phase 0 performs no network operations. A future model stage must require explicit
-provider configuration and disclose the data sent. Preserve originals; generated
-outputs are separate artifacts. Export must have a tested, explicit merge policy
-before it can update notes, and must never implicitly delete user material.
-
-## Decisions and questions for later milestones
-
-- **Chosen:** `src/` layout, Typer, Pydantic, TOML, `uv`, pytest, and Ruff; only
-  dependencies needed by the implemented feature are installed.
-- **Proposed:** PyMuPDF for initial PDF extraction; evaluate Docling against the
-  reviewed fixtures before adding it. OpenAI structured outputs and vision are
-  candidates for reasoning/handwriting; `genanki` for package export; SQLite for
-  durable identities. None is integrated yet.
-- **Resolve through evaluation:** layout/region representation, equation fidelity,
-  confidence policy, reviewer independence, and minimum human-review thresholds.
-- **Resolve before regeneration:** source renames/splits, concept/card identity
-  reconciliation, edited-note ownership, deletion policy, and scheduling preservation.
-- **Resolve before external calls:** consent UX, retention/redaction policy, model
-  capabilities, request budgets, timeout/retry behavior, and provider data handling.
-
-The [roadmap](roadmap.md) orders these decisions around a small tested vertical
-slice instead of implementing the full design in advance.
+Controlled-provider/browser tests establish state transitions, wiring, evidence
+gates and package structure; they do not measure live model accuracy. Handwriting,
+difficult mathematics, source mistakes and semantic drift need expert review and a
+broader manually reviewed evaluation set. Live API validation is separate.

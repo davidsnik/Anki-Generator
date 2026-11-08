@@ -1,4 +1,4 @@
-"""Local discovery commands. No content is parsed or sent to an external service."""
+"""Launch the graphical application or use deterministic standalone discovery."""
 
 from pathlib import Path
 from typing import Annotated
@@ -14,7 +14,7 @@ app = typer.Typer(no_args_is_help=True, add_completion=False, pretty_exceptions_
 
 @app.callback()
 def main() -> None:
-    """Build evidence-based Anki flashcards. Phase 0: local file discovery only."""
+    """Generate evidence-based Anki flashcards from local course material."""
 
 
 @app.command("inspect")
@@ -50,3 +50,45 @@ def inspect_course(
     )
     if not manifest.documents:
         typer.echo("No supported documents found; the manifest is empty.")
+
+
+@app.command()
+def serve(
+    data_directory: Annotated[
+        Path | None, typer.Option("--data-directory", help="Local application data directory.")
+    ] = None,
+    host: Annotated[str, typer.Option(help="Loopback address only.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(min=1, max=65535)] = 8765,
+    open_browser: Annotated[bool, typer.Option("--open-browser/--no-open-browser")] = False,
+) -> None:
+    """Start the local GUI, HTTP API and persistent processing worker."""
+    import threading
+    import time
+    import urllib.error
+    import urllib.request
+    import webbrowser
+
+    import uvicorn
+
+    from anki_generator.api.app import create_app
+
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise typer.BadParameter(
+            "The application must bind to a loopback address", param_hint="--host"
+        )
+    url = f"http://{'[::1]' if host == '::1' else host}:{port}"
+    application = create_app(data_directory)
+    if open_browser:
+
+        def launch_browser() -> None:
+            for _ in range(50):
+                try:
+                    with urllib.request.urlopen(f"{url}/api/health", timeout=1):
+                        webbrowser.open(url)
+                        return
+                except (OSError, urllib.error.URLError):
+                    time.sleep(0.1)
+
+        threading.Thread(target=launch_browser, daemon=True).start()
+    typer.echo(f"Anki Generator is starting at {url}")
+    uvicorn.run(application, host=host, port=port, log_level="warning", access_log=False)

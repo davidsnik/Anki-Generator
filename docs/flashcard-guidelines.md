@@ -1,7 +1,7 @@
 # Flashcard quality specification
 
-This is an initial design specification for generation and review, not a claim
-that card generation exists. Refine it using a manually reviewed evaluation set,
+This specification guides the implemented generation and independent review stages.
+Refine it using a manually reviewed evaluation set,
 recorded failure cases, and student feedback. Correctness takes precedence over
 fluency, volume, or an automatic score.
 
