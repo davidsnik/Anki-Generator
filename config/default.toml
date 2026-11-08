@@ -1,0 +1,7 @@
+# Optional equivalent of built-in defaults. Use --config config/default.toml.
+[discovery]
+supported_extensions = [
+    ".pdf", ".tex", ".md", ".txt", ".png", ".jpg", ".jpeg",
+    ".tif", ".tiff", ".webp", ".pptx", ".docx",
+]
+excluded_directory_names = [".git", ".venv", "__pycache__", "output", "outputs", "runs"]

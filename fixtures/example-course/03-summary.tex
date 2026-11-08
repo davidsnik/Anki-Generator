@@ -1,0 +1,29 @@
+\documentclass{article}
+\usepackage{amsmath,amssymb}
+\title{Synthetic Probability Summary}
+\author{Anki Generator fixture}
+\date{}
+
+\begin{document}
+\maketitle
+
+For events $A$ and $B$ with $\mathbb{P}(B)>0$,
+\[
+  \mathbb{P}(A\mid B)
+  = \frac{\mathbb{P}(A\cap B)}{\mathbb{P}(B)}.
+\]
+Events $A$ and $B$ are independent if and only if
+\[
+  \mathbb{P}(A\cap B)=\mathbb{P}(A)\mathbb{P}(B).
+\]
+For an event $A$, its indicator $\mathbf{1}_A$ satisfies
+\[
+  \mathbb{E}[\mathbf{1}_A]=\mathbb{P}(A).
+\]
+For integrable random variables $X$ and $Y$,
+\[
+  \mathbb{E}[X+Y]=\mathbb{E}[X]+\mathbb{E}[Y].
+\]
+This last equality does not require independence.
+
+\end{document}

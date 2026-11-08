@@ -1,0 +1,50 @@
+# Python and development artifacts
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+.uv-cache/
+
+# Secrets and local assistant state
+.env
+.env.*
+!.env.example
+.aws/
+.codex/
+.agents/
+*.pem
+*.key
+
+# Private course input and generated data (synthetic fixtures stay tracked)
+/data/
+/input/
+/inputs/
+/local/
+/output/
+/outputs/
+/runs/
+*.apkg
+*.colpkg
+*.anki2
+*.db
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db-*
+*.log
+*.tmp
+.anki-generator-output
+
+# Editor and OS state
+.DS_Store
+.idea/
+.vscode/
+*~
