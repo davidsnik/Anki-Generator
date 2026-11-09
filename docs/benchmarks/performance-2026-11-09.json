@@ -1,0 +1,371 @@
+{
+  "schema_version": "1",
+  "measured_at": "2026-11-09",
+  "pipeline": [
+    {
+      "name": "small",
+      "documents": 3,
+      "pages": 3,
+      "cold": {
+        "elapsed_seconds": 2.440534490000573,
+        "recovery": null,
+        "usage": {
+          "cached_calls": 0,
+          "api_calls": 17,
+          "input_tokens": 370,
+          "output_tokens": 140,
+          "total_tokens": 510,
+          "retry_count": 0,
+          "unpriced_calls": 17,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "knowledge": 0.01512,
+          "consolidation": 0.0009,
+          "source_audit": 0.02838,
+          "embeddings": 0.00253,
+          "source_matching": 0.00059,
+          "generation": 0.00047,
+          "pedagogical": 0.00106,
+          "factual": 0.00477,
+          "mathematical": 0.01905,
+          "coverage": 0.00089,
+          "target_coverage": 0.00078
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "cached": {
+        "elapsed_seconds": 0.2510940889987978,
+        "recovery": null,
+        "usage": {
+          "cached_calls": 10,
+          "api_calls": 0,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "knowledge": 0.0,
+          "consolidation": 0.0,
+          "source_audit": 0.0,
+          "source_matching": 0.0,
+          "coverage": 0.0,
+          "target_coverage": 0.0
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "sql_statements": 778,
+      "peak_process_rss_mib": 131.109375,
+      "provider": "explicit_test_simulation_no_live_latency_or_quality_claim"
+    },
+    {
+      "name": "medium",
+      "documents": 24,
+      "pages": 24,
+      "cold": {
+        "elapsed_seconds": 16.76943294999728,
+        "recovery": null,
+        "usage": {
+          "cached_calls": 0,
+          "api_calls": 61,
+          "input_tokens": 1250,
+          "output_tokens": 580,
+          "total_tokens": 1830,
+          "retry_count": 0,
+          "unpriced_calls": 61,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "knowledge": 0.1719,
+          "consolidation": 0.00138,
+          "source_audit": 0.19649,
+          "embeddings": 0.00206,
+          "source_matching": 0.00078,
+          "generation": 0.00054,
+          "factual": 0.01473,
+          "pedagogical": 0.00599,
+          "mathematical": 0.01988,
+          "coverage": 0.00047,
+          "target_coverage": 0.00048
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "cached": {
+        "elapsed_seconds": 1.0266991860007693,
+        "recovery": null,
+        "usage": {
+          "cached_calls": 54,
+          "api_calls": 0,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "knowledge": 0.0,
+          "consolidation": 0.0,
+          "source_audit": 0.0,
+          "source_matching": 0.0,
+          "coverage": 0.0,
+          "target_coverage": 0.0
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "sql_statements": 2573,
+      "peak_process_rss_mib": 132.984375,
+      "provider": "explicit_test_simulation_no_live_latency_or_quality_claim"
+    },
+    {
+      "name": "large",
+      "documents": 100,
+      "pages": 100,
+      "cold": {
+        "elapsed_seconds": 61.69828886299729,
+        "recovery": null,
+        "usage": {
+          "cached_calls": 0,
+          "api_calls": 223,
+          "input_tokens": 4490,
+          "output_tokens": 2200,
+          "total_tokens": 6690,
+          "retry_count": 0,
+          "unpriced_calls": 223,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "knowledge": 1.10858,
+          "consolidation": 0.0084,
+          "source_audit": 1.13402,
+          "embeddings": 0.0022,
+          "source_matching": 0.00054,
+          "generation": 0.00067,
+          "factual": 0.00445,
+          "mathematical": 0.0069,
+          "pedagogical": 0.00346,
+          "coverage": 0.00076,
+          "target_coverage": 0.00077
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "cached": {
+        "elapsed_seconds": 4.165232227998786,
+        "recovery": null,
+        "usage": {
+          "cached_calls": 216,
+          "api_calls": 0,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "knowledge": 0.0,
+          "consolidation": 0.0,
+          "source_audit": 0.0,
+          "source_matching": 0.0,
+          "coverage": 0.0,
+          "target_coverage": 0.0
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "sql_statements": 9120,
+      "peak_process_rss_mib": 138.984375,
+      "provider": "explicit_test_simulation_no_live_latency_or_quality_claim"
+    },
+    {
+      "name": "many_short",
+      "documents": 200,
+      "pages": 200,
+      "cold": {
+        "elapsed_seconds": 130.26925407499948,
+        "recovery": null,
+        "usage": {
+          "cached_calls": 0,
+          "api_calls": 435,
+          "input_tokens": 8730,
+          "output_tokens": 4320,
+          "total_tokens": 13050,
+          "retry_count": 0,
+          "unpriced_calls": 435,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "knowledge": 3.07504,
+          "consolidation": 0.02151,
+          "source_audit": 3.18417,
+          "embeddings": 0.0027,
+          "source_matching": 0.00074,
+          "generation": 0.00096,
+          "factual": 0.00287,
+          "mathematical": 0.01429,
+          "pedagogical": 0.00608,
+          "coverage": 0.0009,
+          "target_coverage": 0.00096
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "cached": {
+        "elapsed_seconds": 8.789048656999512,
+        "recovery": null,
+        "usage": {
+          "cached_calls": 428,
+          "api_calls": 0,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "knowledge": 0.0,
+          "consolidation": 0.0,
+          "source_audit": 0.0,
+          "source_matching": 0.0,
+          "coverage": 0.0,
+          "target_coverage": 0.0
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "sql_statements": 17708,
+      "peak_process_rss_mib": 144.796875,
+      "provider": "explicit_test_simulation_no_live_latency_or_quality_claim"
+    },
+    {
+      "name": "mathematics_visual",
+      "documents": 3,
+      "pages": 12,
+      "cold": {
+        "elapsed_seconds": 4.1412789360001625,
+        "recovery": null,
+        "usage": {
+          "cached_calls": 0,
+          "api_calls": 111,
+          "input_tokens": 2250,
+          "output_tokens": 1080,
+          "total_tokens": 3330,
+          "retry_count": 0,
+          "unpriced_calls": 111,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "interpretation": 0.21155,
+          "knowledge": 0.36778,
+          "consolidation": 0.0032,
+          "source_audit": 0.54299,
+          "embeddings": 0.00205,
+          "source_matching": 0.00077,
+          "generation": 0.00056,
+          "pedagogical": 0.00096,
+          "mathematical": 0.00102,
+          "factual": 0.00094,
+          "coverage": 0.00052,
+          "target_coverage": 0.00052
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "cached": {
+        "elapsed_seconds": 1.6423090989992488,
+        "recovery": null,
+        "usage": {
+          "cached_calls": 104,
+          "api_calls": 0,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "interpretation": 0.0,
+          "knowledge": 0.0,
+          "consolidation": 0.0,
+          "source_audit": 0.0,
+          "source_matching": 0.0,
+          "coverage": 0.0,
+          "target_coverage": 0.0
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "sql_statements": 3362,
+      "peak_process_rss_mib": 149.1640625,
+      "provider": "explicit_test_simulation_no_live_latency_or_quality_claim"
+    },
+    {
+      "name": "restart_recovery",
+      "documents": 24,
+      "pages": 24,
+      "cold": {
+        "elapsed_seconds": 23.82575652000014,
+        "recovery": {
+          "initial_checkpoints": 57,
+          "initial_calls": 58,
+          "final_calls": 62
+        },
+        "usage": {
+          "cached_calls": 0,
+          "api_calls": 61,
+          "input_tokens": 1250,
+          "output_tokens": 580,
+          "total_tokens": 1830,
+          "retry_count": 0,
+          "unpriced_calls": 61,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "knowledge": 0.22213,
+          "consolidation": 0.00144,
+          "source_audit": 0.18473,
+          "embeddings": 0.00257,
+          "source_matching": 0.00052,
+          "generation": 0.0005,
+          "factual": 0.00856,
+          "mathematical": 0.00519,
+          "pedagogical": 0.01282,
+          "coverage": 0.00077,
+          "target_coverage": 0.00062
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "cached": {
+        "elapsed_seconds": 1.0142125689999375,
+        "recovery": null,
+        "usage": {
+          "cached_calls": 54,
+          "api_calls": 0,
+          "cost_is_estimate": true
+        },
+        "stage_unit_seconds": {
+          "knowledge": 0.0,
+          "consolidation": 0.0,
+          "source_audit": 0.0,
+          "source_matching": 0.0,
+          "coverage": 0.0,
+          "target_coverage": 0.0
+        },
+        "cards": 1,
+        "context_budget": 24000
+      },
+      "sql_statements": 3381,
+      "peak_process_rss_mib": 149.5390625,
+      "provider": "explicit_test_simulation_no_live_latency_or_quality_claim"
+    }
+  ],
+  "collections": [
+    {
+      "cards": 1000,
+      "retrieval_build_and_100_queries_seconds": 0.016279420000500977,
+      "matrix_bytes": 512000,
+      "paginated_25_cards_seconds": 0.002443053999741096,
+      "returned": 25,
+      "vectors": "seeded_random_for_memory_and_runtime_only"
+    },
+    {
+      "cards": 10000,
+      "retrieval_build_and_100_queries_seconds": 0.7879449219981325,
+      "matrix_bytes": 5120000,
+      "paginated_25_cards_seconds": 0.007565297000837745,
+      "returned": 25,
+      "vectors": "seeded_random_for_memory_and_runtime_only"
+    }
+  ],
+  "limitations": [
+    "No real API calls; token usage is simulated and cost cannot be inferred.",
+    "RSS is the process cumulative high-water mark; memory is not isolated per workload.",
+    "Timings are local single-run observations, not service-level guarantees."
+  ]
+}

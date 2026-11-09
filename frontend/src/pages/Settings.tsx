@@ -16,6 +16,10 @@ import {
   Trash2,
 } from 'lucide-react';
 import type { Bootstrap, Json, KeyStatus } from '../services/types';
+import { SchedulerPreferences } from '../features/tasks/SchedulerPreferences';
+import { ProcessingPreferences } from '../features/ProcessingPreferences';
+import { BackupRestore } from '../features/BackupRestore';
+import { DesktopPanel } from '../features/Desktop';
 import { generationPresets } from '../services/generationPresets';
 import { api, downloadBackup, list, write } from '../services/api';
 import {
@@ -475,6 +479,16 @@ export function SettingsPage({ bootstrap }: { bootstrap: Bootstrap }) {
             </div>
             {models.error && <ErrorPanel error={models.error} />}
           </section>
+          <SchedulerPreferences
+            value={(settings.tasks || {}) as Json}
+            onChange={(value) => update('tasks', value)}
+          />
+          <ProcessingPreferences
+            value={(settings.processing || {}) as Json}
+            prompts={(settings.prompt_overrides || {}) as Record<string, string>}
+            onChange={(value) => update('processing', value)}
+            onPrompts={(value) => update('prompt_overrides', value)}
+          />
           <section className="panel">
             <SectionHead title="Thoughtful by default" action={<SlidersHorizontal size={21} />}>
               Default generation criteria for your courses.
@@ -574,8 +588,8 @@ export function SettingsPage({ bootstrap }: { bootstrap: Bootstrap }) {
             </div>
             <h3>Your material, your choice</h3>
             <p className="muted">
-              A generation run can send extracted text, source metadata, and rendered source regions
-              to OpenAI. Each run asks for explicit consent.
+              A generation run can send extracted text, source metadata, semantic embedding inputs
+              and rendered source regions to OpenAI. Each run asks for explicit consent.
             </p>
             <p className="muted">
               Local extraction, browsing, editing, review, and export work without transmitting
@@ -606,7 +620,10 @@ export function SettingsPage({ bootstrap }: { bootstrap: Bootstrap }) {
               {backup.isPending ? 'Preparing backup…' : 'Create data backup'}
             </button>
             {backup.error && <ErrorPanel error={backup.error} />}
+            <hr />
+            <BackupRestore />
           </section>
+          <DesktopPanel />
           <section className="panel diagnostics">
             <SectionHead title="Diagnostics" />
             {Object.entries(bootstrap.diagnostics || {}).map(([key, value]) => (

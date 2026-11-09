@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { Course, Document, Page, Region, Source } from '../services/types';
 import { suggestDocumentRole } from '../services/documentRoles';
+import { SourceWorkbench } from '../features/SourceWorkbench';
 import { sourceHighlight } from '../services/geometry';
 import { api, list, upload, write } from '../services/api';
 import {
@@ -55,10 +56,12 @@ export function DocumentsPage({ course }: { course: Course }) {
   const [category, setCategory] = useState('lecture');
   const [authority, setAuthority] = useState('unknown');
   const [progress, setProgress] = useState(0);
+  const [extractIntent, setExtractIntent] = useState(() => crypto.randomUUID());
   const [fileRoles, setFileRoles] = useState<Record<string, string>>({});
   const [uploadStates, setUploadStates] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [preview, setPreview] = useState<Document | null>(null);
+  const [workbench, setWorkbench] = useState<Document | null>(null);
   const [editing, setEditing] = useState<Document | null>(null);
   const [deleting, setDeleting] = useState<Document | null>(null);
   const documents = useQuery({
@@ -67,31 +70,44 @@ export function DocumentsPage({ course }: { course: Course }) {
     refetchInterval: 5000,
   });
   const mutation = useMutation({
-    mutationFn: async () => {
-      const totalBytes = files.reduce((n, f) => n + f.size, 0) || 1;
+    mutationFn: async (only?: File[]) => {
+      const pending =
+        only || files.filter((f) => uploadStates[f.webkitRelativePath || f.name] !== 'imported');
+      const totalBytes = pending.reduce((n, f) => n + f.size, 0) || 1;
       let completedBytes = 0;
-      for (const file of files) {
+      let failures = 0;
+      for (const file of pending) {
         const path = file.webkitRelativePath || file.name;
         setUploadStates((previous) => ({ ...previous, [path]: 'uploading' }));
         try {
           await upload(course.id, [file], fileRoles[path] || category, authority, (n) =>
             setProgress(Math.round(((completedBytes + (file.size * n) / 100) / totalBytes) * 100)),
           );
-          completedBytes += file.size;
           setUploadStates((previous) => ({ ...previous, [path]: 'imported' }));
         } catch (error) {
-          setUploadStates((previous) => ({ ...previous, [path]: 'failed' }));
-          throw error;
+          failures++;
+          setUploadStates((previous) => ({
+            ...previous,
+            [path]: `failed: ${error instanceof Error ? error.message : 'Import failed'}`,
+          }));
         }
+        completedBytes += file.size;
       }
+      return failures;
     },
-    onSuccess: () => {
+    onSuccess: (failures) => {
       client.invalidateQueries();
-      setFiles([]);
-      setFileRoles({});
-      setUploadStates({});
       setProgress(0);
-      toast('Materials imported. Review each document’s role before processing.');
+      if (!failures) {
+        setFiles([]);
+        setFileRoles({});
+        setUploadStates({});
+        toast('Materials imported. Review each document’s role before processing.');
+      } else
+        toast(
+          `${failures} file imports failed. Retry failed files individually; successful imports are preserved.`,
+          'error',
+        );
     },
   });
   const del = useMutation({
@@ -103,17 +119,44 @@ export function DocumentsPage({ course }: { course: Course }) {
     },
   });
   const reprocess = useMutation({
-    mutationFn: (id: string) => write(`/documents/${id}`, { reprocess: true }, 'PATCH'),
+    mutationFn: (id: string) =>
+      write(`/documents/${id}/reprocess`, {
+        mode: 'extract',
+        consent: false,
+        replace_human: false,
+      }),
     onSuccess: () => {
       client.invalidateQueries();
-      toast('Extraction invalidated. Start local extraction to rebuild it.');
+      toast('Local retry queued for this document. Other sources remain unchanged.');
     },
   });
   const extract = useMutation({
-    mutationFn: () => write(`/courses/${course.id}/runs`, { mode: 'extract', consent: false }),
-    onSuccess: () => {
+    mutationFn: () =>
+      write<{ id: string; status: string }>(`/courses/${course.id}/runs`, {
+        mode: 'extract',
+        consent: false,
+        idempotency_key: extractIntent,
+      }),
+    onSuccess: (run) => {
       client.invalidateQueries();
-      toast('Local extraction started. Follow progress in Processing.');
+      window.dispatchEvent(
+        new CustomEvent('anki-task-change', {
+          detail: {
+            task: {
+              ...run,
+              course_id: course.id,
+              course_name: course.name,
+              mode: 'extract',
+              priority: 0,
+            },
+          },
+        }),
+      );
+      setExtractIntent(crypto.randomUUID());
+      toast('Local extraction queued. Follow this task while you keep working.', 'success', {
+        label: 'View task',
+        to: `/tasks/${run.id}`,
+      });
     },
   });
   function addFiles(selected: File[]) {
@@ -286,8 +329,18 @@ export function DocumentsPage({ course }: { course: Course }) {
                   {uploadStates[f.webkitRelativePath || f.name] ||
                     `${(f.size / 1024).toFixed(0)} KB`}
                 </small>
+                {uploadStates[f.webkitRelativePath || f.name]?.startsWith('failed') && (
+                  <button
+                    className="button small"
+                    disabled={mutation.isPending}
+                    onClick={() => mutation.mutate([f])}
+                  >
+                    Retry file
+                  </button>
+                )}
                 <button
                   className="icon-button"
+                  disabled={mutation.isPending}
                   aria-label={`Remove ${f.name} from queue`}
                   onClick={() => setFiles(files.filter((_, j) => i !== j))}
                 >
@@ -311,7 +364,11 @@ export function DocumentsPage({ course }: { course: Course }) {
               disabled={mutation.isPending}
             >
               <Upload size={16} />
-              {mutation.isPending ? 'Importing…' : 'Import materials'}
+              {mutation.isPending
+                ? 'Importing…'
+                : Object.values(uploadStates).some((s) => s.startsWith('failed'))
+                  ? 'Retry failed files'
+                  : 'Import materials'}
             </button>
           </div>
           {mutation.error && <ErrorPanel error={mutation.error} />}
@@ -392,6 +449,13 @@ export function DocumentsPage({ course }: { course: Course }) {
                 </button>
                 <button
                   className="icon-button"
+                  aria-label={`Correct or crop ${document.filename}`}
+                  onClick={() => setWorkbench(document)}
+                >
+                  <Pencil size={16} />
+                </button>
+                <button
+                  className="icon-button"
                   aria-label={`Edit ${document.filename}`}
                   onClick={() => setEditing(document)}
                 >
@@ -427,6 +491,14 @@ export function DocumentsPage({ course }: { course: Course }) {
           approve a generation run.
         </span>
       </div>
+      {workbench && (
+        <SourceWorkbench
+          documentId={workbench.id}
+          documentName={workbench.filename}
+          courseId={course.id}
+          onClose={() => setWorkbench(null)}
+        />
+      )}
       {preview && (
         <SourcePreview
           documentId={preview.id}
@@ -568,6 +640,7 @@ export function SourcePreview({
 }) {
   const [page, setPage] = useState(source?.page_number ?? source?.page ?? 1);
   const [showText, setShowText] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const pages = useQuery({
     queryKey: ['pages', documentId],
     queryFn: async () => list<Page>(await api(`/documents/${documentId}/pages`)),
@@ -592,6 +665,9 @@ export function SourcePreview({
         </label>
         <button className="button small" onClick={() => setShowText(!showText)}>
           {showText ? 'Visual evidence' : 'Extracted text'}
+        </button>
+        <button className="button small" onClick={() => setCorrecting(true)}>
+          Correct transcription / crop
         </button>
         <a
           className="button small"
@@ -644,6 +720,15 @@ export function SourcePreview({
       )}
     </>
   );
+  if (correcting)
+    return (
+      <SourceWorkbench
+        documentId={documentId}
+        documentName={documentName}
+        initialPage={page}
+        onClose={() => setCorrecting(false)}
+      />
+    );
   return embedded ? (
     <div className="embedded-source">{content}</div>
   ) : (

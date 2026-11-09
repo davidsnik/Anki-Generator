@@ -55,4 +55,34 @@ describe('durable processing controls', () => {
     expect(screen.queryByRole('button', { name: 'Pause at checkpoint' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
   });
+  it('requires fresh visible consent before retrying only a selected model stage', async () => {
+    const request = vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => ({}) });
+    vi.stubGlobal('fetch', request);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <RunDetail
+          run={{
+            id: 'prior',
+            course_id: 'c',
+            mode: 'generate',
+            status: 'completed',
+            created_at: '2026-01-01T12:00:00Z',
+            stages: [{ name: 'factual', status: 'completed' }],
+          }}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry this stage' }));
+    expect(screen.getByRole('button', { name: 'Confirm stage retry' })).toBeDisabled();
+    expect(request).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByLabelText(/I approve sending the source text/));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm stage retry' }));
+    await waitFor(() => expect(request).toHaveBeenCalledOnce());
+    expect(request.mock.calls[0][0]).toBe('/api/runs/prior/retry-stage');
+    expect(JSON.parse(request.mock.calls[0][1].body)).toMatchObject({
+      stage: 'factual',
+      consent: true,
+      replace_human: false,
+    });
+  });
 });

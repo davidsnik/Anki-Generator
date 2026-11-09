@@ -25,14 +25,75 @@ from anki_generator.processing.contracts import (
 )
 from anki_generator.processing.mathematics import check_identity
 
-from .state import digest
+from .state import digest, entity_data
 
 
 class QualityStages:
+    def _record_task_card(self, session, card, *, generated=False, is_new=False):
+        """Distinct-card counters commit with outputs and survive retries/restarts."""
+        if card.course_id != self.course_id:
+            raise ValueError("A task output belongs to another course")
+        run = session.get(Run, self.run_id)
+        marker_key = f"task-card:{card.id}"
+        previous = run.checkpoints.get(marker_key, {})
+        marker = {
+            "generated": bool(generated or previous.get("generated")),
+            "reused": bool(not generated or previous.get("reused")),
+            "new": bool(is_new or previous.get("new")),
+            "verified": card.verification_status == "verified",
+            "revision": card.revision_number,
+        }
+        progress = {**run.progress, "task_counter_version": 1}
+        for flag, name in [
+            ("generated", "cards_generated"),
+            ("reused", "cards_reused"),
+            ("new", "cards_new"),
+            ("verified", "cards_verified"),
+        ]:
+            progress[name] = max(
+                0, int(progress.get(name, 0)) + int(marker[flag]) - int(bool(previous.get(flag)))
+            )
+        run.checkpoints = {**run.checkpoints, marker_key: marker}
+        run.progress = progress
+
     def _persist_candidate(
         self, candidate: CardCandidate, *, card_id: str | None = None, origin: str = "generated"
     ) -> tuple[str, int] | None:
-        card_id = card_id or self._candidate_id(candidate)
+        if card_id is None:
+            from anki_generator.services.identity import reconcile
+
+            with self.sessions() as session:
+                existing = [
+                    entity_data(card)
+                    for card in session.scalars(
+                        select(Card).where(Card.course_id == self.course_id)
+                    )
+                ]
+            concept_map = {
+                c["metadata_json"].get("canonical_key", c["id"]): c for c in self.concepts
+            }
+            concept_id = next(
+                (concept_map[key]["id"] for key in candidate.concept_keys if key in concept_map),
+                None,
+            )
+            card_id = reconcile(
+                self,
+                "card",
+                f"{concept_id or '-'}:{candidate.identity_key}",
+                {
+                    **candidate.model_dump(mode="json"),
+                    "concept_id": concept_id,
+                    "assumptions": [
+                        a
+                        for key in candidate.concept_keys
+                        if key in concept_map
+                        for a in concept_map[key]["metadata_json"].get("assumptions", [])
+                    ],
+                },
+                self._candidate_id(candidate),
+                existing,
+            )
+        self._resolved_card_ids[self._candidate_id(candidate)] = card_id
         candidate.sources = self.evidence.enrich(candidate.sources)
         concept_by_key = {
             c["metadata_json"].get("canonical_key", c["id"]): c for c in self.concepts
@@ -69,6 +130,9 @@ class QualityStages:
             errors.append("A card question or answer is empty.")
         with self.sessions() as session:
             card = session.get(Card, card_id)
+            is_new = card is None
+            if card is not None and origin == "requested_revision":
+                self._check_requested_revision(session, card)
             if (
                 card
                 and (card.manually_edited or card.review_status in {"approved", "rejected"})
@@ -131,6 +195,12 @@ class QualityStages:
             card.review_status = "pending"
             card.manually_edited = False
             card.revision_number = revision_number
+            if origin == "requested_revision":
+                run = session.get(Run, self.run_id)
+                run.checkpoints = {
+                    **run.checkpoints,
+                    f"requested-revision:{card_id}": revision_number,
+                }
             card.issues = [
                 {
                     "category": "evidence",
@@ -140,6 +210,7 @@ class QualityStages:
                 }
                 for e in errors
             ]
+            self._record_task_card(session, card, generated=True, is_new=is_new)
             session.commit()
         return card_id, revision_number
 
@@ -157,7 +228,21 @@ class QualityStages:
             if stage in {"factual", "mathematical"}
             else []
         )
-        batches = [images[offset : offset + 12] for offset in range(0, len(images), 12)] or [[]]
+        from anki_generator.services.context_budget import token_upper_bound
+
+        reserve = (
+            token_upper_bound(payload)
+            + token_upper_bound(self._prompt_text(stage))
+            + token_upper_bound(QualityReview.model_json_schema())
+            + 1024
+        )
+        batch_size = min(
+            self.options.vision_batch_images,
+            max(1, (self.options.input_token_budget - reserve) // 4096),
+        )
+        batches = [
+            images[offset : offset + batch_size] for offset in range(0, len(images), batch_size)
+        ] or [[]]
         reviews = []
         for batch_index, batch in enumerate(batches):
             batch_payload = {
@@ -251,13 +336,18 @@ class QualityStages:
             card_id, revision = saved
             with self.sessions() as session:
                 evidence_issues = list(session.get(Card, card_id).issues)
-            factual = self._review(card_id, revision, "factual", candidate)
-            pedagogical = self._review(card_id, revision, "pedagogical", candidate)
-            reviews = [factual, pedagogical]
+            stages = ["factual", "pedagogical"] + (
+                ["mathematical"] if candidate.mathematical else []
+            )
+            reviews = self._parallel(
+                stages,
+                lambda stage, cid=card_id, rev=revision, draft=candidate: self._review(
+                    cid, rev, stage, draft
+                ),
+            )
             if candidate.mathematical:
-                mathematical = self._review(card_id, revision, "mathematical", candidate)
-                reviews.append(mathematical)
-                checks = [check_identity(check) for check in candidate.symbolic_checks]
+                with self._local_work():
+                    checks = [check_identity(check) for check in candidate.symbolic_checks]
                 if checks:
                     verdict = (
                         "revise"
@@ -326,6 +416,7 @@ class QualityStages:
                     "verified" if passed else ("rejected" if rejected else "needs_review")
                 )
                 card.issues = issues
+                self._record_task_card(session, card, generated=True)
                 session.commit()
             if passed or rejected or attempt == maximum:
                 self._finish_candidate(final_key, card_id, revision)

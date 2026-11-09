@@ -18,127 +18,142 @@ from anki_generator.processing.contracts import (
     DocumentKnowledge,
 )
 
-from .state import entity_data
+from .state import digest, entity_data
 
 
 class KnowledgeStages:
     def _knowledge(self) -> None:
-        analyses: list[dict[str, Any]] = []
-        chunk_limit = min(max(int(self.config.get("source_chunk_characters", 18000)), 2000), 48000)
-        sections_total = 0
-        for doc in self.documents:
-            for page in doc["extraction"]["pages"]:
-                text = page["text"]
-                text_sections = sum(
-                    bool(text[n : n + chunk_limit].strip())
-                    for n in range(0, max(len(text), 1), chunk_limit - 300)
-                )
-                sections_total += max(
-                    1, text_sections + len(page.get("visual_interpretations", []))
-                )
-        self._stage("knowledge", total=sections_total)
+        from anki_generator.services.context_budget import bounded_batches
+
+        tasks = []
+        chunk_limit = min(
+            self.options.source_chunk_characters, self.options.input_token_budget // 3
+        )
         for document in self.documents:
             for page in document["extraction"]["pages"]:
                 text = page["text"]
-                visual = page.get("visual_interpretations", [])
-                # Even a single extremely long text page is segmented with overlap.
-                segments = [
-                    text[n : n + chunk_limit]
-                    for n in range(0, max(len(text), 1), chunk_limit - 300)
+                sections = [
+                    (text[offset : offset + chunk_limit], [])
+                    for offset in range(0, len(text), chunk_limit - 200)
+                    if text[offset : offset + chunk_limit].strip()
                 ]
-                sections = [(segment, []) for segment in segments if segment.strip()]
-                sections.extend(("", [item]) for item in visual)
-                if not sections:
-                    sections = [("", [])]
-                for section_index, (segment, section_visual) in enumerate(sections):
-                    payload = {
-                        "course": {
-                            "name": self.course["name"],
-                            "description": self.course["description"],
-                        },
-                        "document_id": document["id"],
-                        "filename": document["filename"],
-                        "role": document["category"],
-                        "authority": document["authority"],
-                        "linked_document_id": document["linked_document_id"],
-                        "role_influence": self.config.get("role_influence", {}),
-                        "page_number": page["page_number"],
-                        "text": segment,
-                        "visual_interpretations": section_visual,
-                        "available_regions": [
-                            {"region_id": r["id"], "bbox": r["bbox"]} for r in page["regions"]
-                        ],
-                        "extraction_warnings": page["warnings"],
-                    }
-                    result = self._call(
-                        "knowledge",
-                        f"{document['id']}:{page['page_number']}:{section_index}",
-                        payload,
-                        DocumentKnowledge,
-                    )
-                    for warning in result.warnings + result.conflicts:
-                        self._warning(f"{document['filename']}: {warning}")
-                    for concept in result.concepts:
-                        if result.conflicts:
-                            concept.uncertain = True
-                            concept.conflicts.extend(result.conflicts)
-                        problems = self.evidence.validate(concept.sources)
-                        if problems:
-                            concept.uncertain = True
-                            concept.conflicts.extend(problems)
-                    analyses.append(
-                        {
-                            "document_id": document["id"],
-                            "role": document["category"],
-                            "authority": document["authority"],
-                            **result.model_dump(mode="json"),
-                        }
-                    )
+                sections.extend(("", [item]) for item in page.get("visual_interpretations", []))
+                for index, (segment, visual) in enumerate(sections or [("", [])]):
+                    tasks.append((document, page, index, segment, visual))
+        self._stage("knowledge", total=len(tasks))
+
+        def analyze(task):
+            document, page, index, segment, visual = task
+            visual_ids = {item["region_id"] for item in visual}
+            payload = {
+                "course": {"name": self.course["name"], "description": self.course["description"]},
+                "document_id": document["id"],
+                "filename": document["filename"],
+                "role": document["category"],
+                "authority": document["authority"],
+                "linked_document_id": document["linked_document_id"],
+                "role_influence": self.config.get("role_influence", {}),
+                "page_number": page["page_number"],
+                "text": segment,
+                "visual_interpretations": visual,
+                "available_regions": [
+                    {"region_id": r["id"], "bbox": r["bbox"]}
+                    for r in page["regions"]
+                    if r["id"] in visual_ids
+                ],
+                "extraction_warnings": page["warnings"],
+                "source_revision": document.get("source_revision", ""),
+                "human_verified": page.get("human_verified", False),
+            }
+            result = self._call(
+                "knowledge",
+                f"{document['id']}:{page['page_number']}:{index}",
+                payload,
+                DocumentKnowledge,
+            )
+            for warning in result.warnings + result.conflicts:
+                self._warning(f"{document['filename']}: {warning}")
+            for concept in result.concepts:
+                errors = self.evidence.validate(concept.sources)
+                concept.uncertain |= bool(errors or result.conflicts)
+                concept.conflicts.extend(errors + result.conflicts)
+            return {
+                "document_id": document["id"],
+                "role": document["category"],
+                "authority": document["authority"],
+                **result.model_dump(mode="json"),
+            }
+
+        analyses = self._parallel(tasks, analyze)
         self._stage("knowledge", complete=True)
         self._load_concepts()
-        existing = [
-            {
-                "key": c["metadata_json"].get("canonical_key", c["id"]),
-                "title": c["title"],
-                "kind": c["kind"],
-            }
-            for c in self.concepts
-        ]
-        # Hierarchical consolidation bounds the number of full candidate records
-        # per request while retaining assumptions/evidence in every intermediate.
-        level = analyses
-        round_number = 0
-        while len(json.dumps(level)) > 400000 and len(level) > 1:
-            reduced = []
-            for offset in range(0, len(level), 8):
-                merged = self._call(
-                    "consolidation",
-                    f"level-{round_number}-{offset}",
+        # Preserve complete concepts/assumptions in bounded shards rather than
+        # compressing an entire course into a final oversized request.
+        units = []
+        for analysis in analyses:
+            for concept in analysis["concepts"]:
+                units.append(
                     {
-                        "analyses": level[offset : offset + 8],
-                        "existing_keys": existing,
+                        **{key: analysis[key] for key in ("document_id", "role", "authority")},
+                        "concepts": [concept],
+                        "exercises": [
+                            e
+                            for e in analysis["exercises"]
+                            if concept["key"] in e["concepts"] or concept["title"] in e["concepts"]
+                        ],
+                        "conflicts": analysis["conflicts"],
+                    }
+                )
+        batches = bounded_batches(
+            units,
+            max_bytes=max(2000, self.options.input_token_budget // 2),
+            max_items=self.options.coverage_batch_size,
+        )
+        consolidated = []
+        for index, batch in enumerate(batches):
+            consolidated.append(
+                self._call(
+                    "consolidation",
+                    f"course-shard-{index}",
+                    {
+                        "course": self.course["name"],
+                        "analyses": batch,
                         "role_influence": self.config.get("role_influence", {}),
+                        "hierarchy_scope": (
+                            "Preserve topics/subtopics and all explicit assumptions "
+                            "within this source-linked shard."
+                        ),
                     },
                     CourseKnowledge,
                 )
-                reduced.append(merged.model_dump(mode="json"))
-            if len(reduced) >= len(level):
-                raise ValueError(
-                    "Course synthesis exceeds the configured context budget. Process "
-                    "a smaller topic set."
-                )
-            level = reduced
-            round_number += 1
-        result = self._call(
-            "consolidation",
-            "course",
-            {
-                "course": self.course["name"],
-                "analyses": level,
-                "existing_keys": existing,
-                "role_influence": self.config.get("role_influence", {}),
-            },
-            CourseKnowledge,
+            )
+        merged = {}
+        for shard in consolidated:
+            for concept in shard.concepts:
+                if concept.key not in merged:
+                    merged[concept.key] = concept
+                else:
+                    current = merged[concept.key]
+                    if set(current.assumptions) != set(concept.assumptions):
+                        concept.key = f"{concept.key}:{digest(sorted(concept.assumptions))[:10]}"
+                        merged[concept.key] = concept
+                        continue
+                    refs = {
+                        json.dumps(ref.model_dump(mode="json"), sort_keys=True): ref
+                        for ref in current.sources + concept.sources
+                    }
+                    current.sources = list(refs.values())
+                    current.relationships = list(
+                        dict.fromkeys(current.relationships + concept.relationships)
+                    )
+                    current.exercise_frequency += concept.exercise_frequency
+                    current.conflicts = list(dict.fromkeys(current.conflicts + concept.conflicts))
+                    current.uncertain |= concept.uncertain
+        result = CourseKnowledge(
+            concepts=list(merged.values()),
+            terminology=[v for shard in consolidated for v in shard.terminology],
+            conflicts=[v for shard in consolidated for v in shard.conflicts],
+            unresolved=[v for shard in consolidated for v in shard.unresolved],
         )
         self._persist_concepts(result, analyses)
         for warning in result.conflicts + result.unresolved:
@@ -174,6 +189,23 @@ class KnowledgeStages:
             or str(uuid5(NAMESPACE_URL, f"{self.course_id}:concept:{c.key}"))
             for c in result.concepts
         }
+        from anki_generator.services.identity import reconcile
+
+        for candidate in result.concepts:
+            ids[candidate.key] = reconcile(
+                self,
+                "concept",
+                candidate.key,
+                {
+                    "title": candidate.title,
+                    "statement": candidate.statement,
+                    "kind": candidate.kind,
+                    "assumptions": candidate.assumptions,
+                    "sources": [ref.model_dump(mode="json") for ref in candidate.sources],
+                },
+                ids[candidate.key],
+                self.concepts,
+            )
         seen_ids = set()
         for key in ids:
             if ids[key] in seen_ids:
@@ -217,15 +249,31 @@ class KnowledgeStages:
                 concept.description = candidate.statement
                 concept.kind = candidate.kind
                 concept.parent_id = ids.get(candidate.parent_key)
-                concept.importance = candidate.importance
-                concept.sources = [ref.model_dump(mode="json") for ref in candidate.sources]
-                concept.relationships = [ids[k] for k in candidate.relationships if k in ids]
-                concept.exercise_analysis = [
+                from anki_generator.services.importance import importance_from_sources
+
+                relevant_exercises = [
                     e
                     for e in exercise_records
                     if candidate.key in e.get("concepts", [])
                     or candidate.title in e.get("concepts", [])
                 ]
+                if not analyses and concept.exercise_analysis:
+                    relevant_exercises = concept.exercise_analysis
+                estimate = (
+                    (concept.metadata_json or {}).get("model_importance", candidate.importance)
+                    if not analyses
+                    else candidate.importance
+                )
+                concept.importance, importance_signals = importance_from_sources(
+                    estimate,
+                    [ref.model_dump(mode="json") for ref in candidate.sources],
+                    self.documents,
+                    relevant_exercises,
+                    self.config.get("role_influence", {}),
+                )
+                concept.sources = [ref.model_dump(mode="json") for ref in candidate.sources]
+                concept.relationships = [ids[k] for k in candidate.relationships if k in ids]
+                concept.exercise_analysis = relevant_exercises
                 concept.excluded = concept.excluded or any(
                     str(x).casefold() in {candidate.key.casefold(), candidate.title.casefold()}
                     for x in exclusions
@@ -236,6 +284,8 @@ class KnowledgeStages:
                     "active_in_inventory": True,
                     "assumptions": candidate.assumptions,
                     "importance_reason": candidate.importance_reason,
+                    "importance_signals": importance_signals,
+                    "model_importance": estimate,
                     "exercise_frequency": candidate.exercise_frequency,
                     "uncertain": candidate.uncertain or bool(errors),
                     "conflicts": list(dict.fromkeys(candidate.conflicts + errors)),
@@ -277,4 +327,6 @@ class KnowledgeStages:
                     break
                 children = expanded
             concepts = [c for c in concepts if c["id"] in children]
-        return concepts
+        return sorted(
+            concepts, key=lambda concept: (-concept["importance"], concept["title"], concept["id"])
+        )

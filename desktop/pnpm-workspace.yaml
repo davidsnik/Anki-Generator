@@ -1,0 +1,3 @@
+# Windows packaging is not a supported build target in this Linux release.
+allowBuilds:
+  electron-winstaller: false

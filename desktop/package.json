@@ -1,0 +1,26 @@
+{
+  "name": "anki-generator-desktop",
+  "productName": "Anki Generator",
+  "desktopName": "org.anki_generator.AnkiGenerator.desktop",
+  "version": "0.1.0",
+  "description": "Evidence-backed university flashcards, with local document processing and human review",
+  "private": true,
+  "license": "UNLICENSED",
+  "author": "Anki Generator contributors",
+  "homepage": "https://github.com/davidsnik/Anki-Generator",
+  "main": "main.cjs",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "package": "electron-builder --config electron-builder.cjs --linux AppImage --publish never && bash ../scripts/package-rpm.sh",
+    "package:dir": "electron-builder --config electron-builder.cjs --linux dir --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
+  },
+  "packageManager": "pnpm@11.19.0"
+}

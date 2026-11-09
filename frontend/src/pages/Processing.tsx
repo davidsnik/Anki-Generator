@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { elapsedTime, taskActions } from '../features/tasks/types';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -31,7 +32,7 @@ import {
   statusTone,
   useToast,
 } from '../components/UI';
-const activeStatuses = ['queued', 'running', 'pausing', 'resuming', 'cancelling'];
+const activeStatuses = ['queued', 'running', 'pausing', 'recovering', 'cancelling'];
 export function RunDialog({
   course,
   onClose,
@@ -47,23 +48,33 @@ export function RunDialog({
   const [overwrite, setOverwrite] = useState(false);
   const [local, setLocal] = useState(mode === 'extract');
   const client = useQueryClient();
-  const navigate = useNavigate();
+  const toast = useToast();
+  const [intent] = useState(() => crypto.randomUUID());
   const documents = useQuery({
     queryKey: ['documents', course.id],
     queryFn: async () => list<Document>(await api(`/courses/${course.id}/documents`)),
   });
   const start = useMutation({
     mutationFn: () =>
-      write(`/courses/${course.id}/runs`, {
+      write<Run>(`/courses/${course.id}/runs`, {
         mode: local ? 'extract' : mode,
         consent: local ? false : consent,
         overwrite_manual: overwrite,
         ...extra,
+        idempotency_key: intent,
       }),
-    onSuccess: () => {
+    onSuccess: (run) => {
       client.invalidateQueries();
+      window.dispatchEvent(
+        new CustomEvent('anki-task-change', {
+          detail: { task: { ...run, course_name: course.name, priority: 0 } },
+        }),
+      );
       onClose();
-      navigate(`/courses/${course.id}/processing`);
+      toast(`${course.name}: task ${run.status}. You can keep using your workspace.`, 'success', {
+        label: 'View task',
+        to: `/tasks/${run.id}`,
+      });
     },
   });
   return (
@@ -97,7 +108,7 @@ export function RunDialog({
           <p>
             {local
               ? 'Extraction preserves originals and records uncertainty for later review.'
-              : 'This run can send extracted course text, educational roles, source metadata, and rendered source regions (including handwriting and diagrams) to the OpenAI API. API usage may incur charges. Your API key stays on the server.'}
+              : 'This run can send extracted course text, educational roles, source metadata, semantic embedding inputs (learning targets, cards and assumptions), and rendered source regions (including handwriting and diagrams) to the OpenAI API. API usage may incur charges. Your API key stays on the server.'}
           </p>
           <details>
             <summary>{documents.data?.length ?? 0} source documents in this course</summary>
@@ -185,7 +196,10 @@ export function ProcessingPage({ course }: { course: Course }) {
           </button>
         }
       >
-        Every stage is saved. Every uncertainty stays visible.
+        Every stage is saved. Every uncertainty stays visible.{' '}
+        <Link className="text-link" to={`/tasks?course_id=${course.id}`}>
+          Open complete task history
+        </Link>
       </SectionHead>
       {runs.isPending ? (
         <Loading />
@@ -248,13 +262,32 @@ export function ProcessingPage({ course }: { course: Course }) {
     </>
   );
 }
-export function RunDetail({ run }: { run: Run }) {
+export function RunDetail({ run, controls = true }: { run: Run; controls?: boolean }) {
   const client = useQueryClient();
   const toast = useToast();
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const available = taskActions({ status: run.status, allowed_actions: run.allowed_actions });
+  const [retryStage, setRetryStage] = useState<string | null>(null);
+  const [retryConsent, setRetryConsent] = useState(false);
+  const retry = useMutation({
+    mutationFn: () =>
+      write(`/runs/${run.id}/retry-stage`, {
+        stage: retryStage,
+        consent: run.mode === 'extract' ? false : retryConsent,
+        replace_human: false,
+      }),
+    onSuccess: () => {
+      client.invalidateQueries();
+      setRetryStage(null);
+      setRetryConsent(false);
+      toast('Selected stage queued as a new reproducible run; valid unrelated work is reused.');
+    },
+  });
   const action = useMutation({
     mutationFn: (name: string) => write(`/runs/${run.id}/${name}`),
     onSuccess: () => {
       client.invalidateQueries();
+      setConfirmCancel(false);
       toast('Processing control updated. Changes take effect at a safe checkpoint.');
     },
   });
@@ -272,7 +305,12 @@ export function RunDetail({ run }: { run: Run }) {
     0,
     Math.round(((endTime ? new Date(endTime).getTime() : Date.now()) - startTime) / 1000),
   );
-  const elapsed = Number.isFinite(seconds) ? `${Math.floor(seconds / 60)}m ${seconds % 60}s` : '—';
+  const elapsed =
+    typeof run.elapsed_seconds === 'number'
+      ? elapsedTime(run.elapsed_seconds)
+      : Number.isFinite(seconds)
+        ? `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+        : '—';
   return (
     <>
       <section className="panel pipeline-panel">
@@ -280,8 +318,17 @@ export function RunDetail({ run }: { run: Run }) {
           <div>
             <div className="eyebrow">PROCESSING RUN · {run.id.slice(0, 8)}</div>
             <h2>{human(run.current_stage || run.stage || run.status)}</h2>
-            <span className="muted">
-              <Clock3 size={14} /> Started {formatDate(run.started_at || run.created_at)} · Elapsed{' '}
+            <span
+              className="muted"
+              title={
+                run.elapsed_basis ||
+                'Wall time since the first start; active intervals were not recorded.'
+              }
+            >
+              <Clock3 size={14} /> Started {formatDate(run.started_at || run.created_at)} ·{' '}
+              {typeof run.elapsed_seconds === 'number' && !run.elapsed_basis?.startsWith('Legacy')
+                ? 'Processing'
+                : 'Wall time'}{' '}
               {elapsed}
             </span>
           </div>
@@ -306,49 +353,51 @@ export function RunDetail({ run }: { run: Run }) {
             </div>
           </div>
         )}
-        <div className="run-controls">
-          {activeStatuses.includes(run.status) && (
-            <button
-              className="button"
-              disabled={action.isPending}
-              onClick={() => action.mutate('pause')}
-            >
-              <Pause size={15} />
-              Pause at checkpoint
-            </button>
-          )}
-          {run.status === 'paused' && (
-            <button
-              className="button primary"
-              disabled={action.isPending}
-              onClick={() => action.mutate('resume')}
-            >
-              <Play size={15} />
-              Resume
-            </button>
-          )}
-          {['failed', 'cancelled', 'interrupted'].includes(run.status) && (
-            <button
-              className="button"
-              disabled={action.isPending}
-              onClick={() => action.mutate('retry')}
-            >
-              <RefreshCw size={15} />
-              Retry saved work
-            </button>
-          )}
-          {['queued', 'running', 'paused', 'pausing'].includes(run.status) && (
-            <button
-              className="button"
-              disabled={action.isPending}
-              onClick={() => action.mutate('cancel')}
-            >
-              <Square size={14} />
-              Cancel
-            </button>
-          )}
-        </div>
-        {action.error && <ErrorPanel error={action.error} />}
+        {controls && (
+          <div className="run-controls">
+            {available.includes('pause') && (
+              <button
+                className="button"
+                disabled={action.isPending}
+                onClick={() => action.mutate('pause')}
+              >
+                <Pause size={15} />
+                Pause at checkpoint
+              </button>
+            )}
+            {available.includes('resume') && (
+              <button
+                className="button primary"
+                disabled={action.isPending}
+                onClick={() => action.mutate('resume')}
+              >
+                <Play size={15} />
+                Resume
+              </button>
+            )}
+            {available.includes('retry') && (
+              <button
+                className="button"
+                disabled={action.isPending}
+                onClick={() => action.mutate('retry')}
+              >
+                <RefreshCw size={15} />
+                Retry saved work
+              </button>
+            )}
+            {available.includes('cancel') && (
+              <button
+                className="button"
+                disabled={action.isPending}
+                onClick={() => setConfirmCancel(true)}
+              >
+                <Square size={14} />
+                Cancel
+              </button>
+            )}
+          </div>
+        )}
+        {controls && action.error && <ErrorPanel error={action.error} />}
         <div className="pipeline-stages">
           {stages.map((stage, i) => (
             <div className={`pipeline-stage ${stage.status}`} key={stage.name || i}>
@@ -376,7 +425,20 @@ export function RunDetail({ run }: { run: Run }) {
                   </span>
                 )}
               </div>
-              <Badge tone={statusTone(stage.status)}>{human(stage.status)}</Badge>
+              <div className="inline-actions wrap">
+                <Badge tone={statusTone(stage.status)}>{human(stage.status)}</Badge>
+                {!activeStatuses.includes(run.status) && stage.status !== 'pending' && (
+                  <button
+                    className="button small"
+                    onClick={() => {
+                      setRetryStage(stage.name || stage.stage || '');
+                      setRetryConsent(false);
+                    }}
+                  >
+                    Retry this stage
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -436,6 +498,62 @@ export function RunDetail({ run }: { run: Run }) {
             ))}
           </div>
         </section>
+      )}
+      {confirmCancel && (
+        <Modal title="Cancel this task?" onClose={() => setConfirmCancel(false)}>
+          <p>
+            Completed work stays saved. Future processing stops at a safe checkpoint; a provider
+            request already in flight may finish.
+          </p>
+          <div className="form-actions">
+            <button className="button" onClick={() => setConfirmCancel(false)}>
+              Keep processing
+            </button>
+            <button
+              className="button danger"
+              disabled={action.isPending || !available.includes('cancel')}
+              onClick={() => action.mutate('cancel')}
+            >
+              Cancel this task
+            </button>
+          </div>
+          {action.error && <ErrorPanel error={action.error} />}
+        </Modal>
+      )}
+      {retryStage && (
+        <Modal title={`Retry ${human(retryStage)} only?`} onClose={() => setRetryStage(null)}>
+          <p>
+            The backend reuses the original configuration and valid unrelated checkpoints. Changed
+            sources and protected human revisions are checked before processing.
+          </p>
+          {run.mode !== 'extract' && (
+            <label className="consent-label">
+              <input
+                type="checkbox"
+                checked={retryConsent}
+                onChange={(e) => setRetryConsent(e.target.checked)}
+              />
+              <span>
+                I approve sending the source text, semantic embedding inputs (learning targets,
+                cards and assumptions), original regions and selected stage inputs to OpenAI for
+                this retry. API usage may incur charges.
+              </span>
+            </label>
+          )}
+          {retry.error && <ErrorPanel error={retry.error} />}
+          <div className="form-actions">
+            <button className="button" onClick={() => setRetryStage(null)}>
+              Cancel
+            </button>
+            <button
+              className="button primary"
+              disabled={retry.isPending || (run.mode !== 'extract' && !retryConsent)}
+              onClick={() => retry.mutate()}
+            >
+              Confirm stage retry
+            </button>
+          </div>
+        </Modal>
       )}
       <section className="panel">
         <details>

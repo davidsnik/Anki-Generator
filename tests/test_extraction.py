@@ -152,7 +152,11 @@ def test_actual_office_formats_extract_text_and_original_embedded_rasters(
     suffix: str,
     tmp_path: Path,
 ) -> None:
-    result = extract_document(FIXTURES / f"sample.{suffix}", tmp_path)
+    result = extract_document(
+        FIXTURES / f"sample.{suffix}",
+        tmp_path,
+        options=ExtractionOptions(office_rendering="native"),
+    )
     assert "P(B)>0" in "\n".join(page.text for page in result.pages)
     assert result.status == "needs_review"
     assert any("pagination" in warning for warning in result.warnings)

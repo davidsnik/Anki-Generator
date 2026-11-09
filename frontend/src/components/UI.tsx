@@ -1,28 +1,47 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { AlertCircle, Check, ChevronRight, LoaderCircle, X, Sparkles, Search } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-export const ToastContext = createContext<(message: string, tone?: 'success' | 'error') => void>(
-  () => {},
-);
+export interface ToastAction {
+  label: string;
+  to: string;
+}
+export const ToastContext = createContext<
+  (message: string, tone?: 'success' | 'error', action?: ToastAction) => void
+>(() => {});
 export function useToast() {
   return useContext(ToastContext);
 }
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [message, setMessage] = useState<{ text: string; tone: string } | null>(null);
+  const [message, setMessage] = useState<{
+    text: string;
+    tone: string;
+    action?: ToastAction;
+  } | null>(null);
   useEffect(() => {
     if (message) {
       const t = setTimeout(() => setMessage(null), 6000);
       return () => clearTimeout(t);
     }
   }, [message]);
+  const notify = useCallback(
+    (text: string, tone: 'success' | 'error' = 'success', action?: ToastAction) =>
+      setMessage({ text, tone, action }),
+    [],
+  );
   return (
-    <ToastContext.Provider value={(text, tone = 'success') => setMessage({ text, tone })}>
+    <ToastContext.Provider value={notify}>
       {children}
       {message && (
         <div role="status" className={`toast ${message.tone}`}>
           {message.tone === 'error' ? <AlertCircle size={19} /> : <Check size={19} />}
           <span>{message.text}</span>
+          {message.action && (
+            <Link className="toast-action" to={message.action.to}>
+              {message.action.label}
+            </Link>
+          )}
           <button aria-label="Dismiss notification" onClick={() => setMessage(null)}>
             <X size={16} />
           </button>

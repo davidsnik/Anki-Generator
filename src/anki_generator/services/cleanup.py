@@ -3,7 +3,7 @@
 import shutil
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
 
 from anki_generator.database.entities import Document
@@ -11,10 +11,13 @@ from anki_generator.services.storage import safe_storage_path
 
 
 def remove_unreferenced_blob(sessions: sessionmaker, root: Path, relative: str) -> None:
-    with sessions() as session:
+    with sessions.begin() as session:
+        # Coordinate the final reference check/unlink with a new upload's short
+        # guarded insert. Preparing/hash-writing blobs happens before that insert.
+        session.execute(text("BEGIN IMMEDIATE"))
         if session.scalar(select(Document.id).where(Document.storage_path == relative).limit(1)):
             return
-    safe_storage_path(root, relative).unlink(missing_ok=True)
+        safe_storage_path(root, relative).unlink(missing_ok=True)
 
 
 def remove_owned_directory(root: Path, relative: str) -> None:

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Anki Generator</title>
+    <link rel="stylesheet" href="/startup.css" />
+  </head>
+  <body>
+    <main>
+      <div class="brand">
+        <img src="/icon.png" alt="" /><strong
+          >Anki<span>Generator</span></strong
+        >
+      </div>
+      <div class="workspace-icon" aria-hidden="true">✧</div>
+      <p class="eyebrow">YOUR KNOWLEDGE, CONNECTED</p>
+      <h1 id="title">A little structure.<br />A lot more understanding.</h1>
+      <p id="message" role="status">Preparing your private workspace…</p>
+      <div class="progress" id="progress" aria-hidden="true"><span></span></div>
+      <p id="details" class="details">
+        Your documents and saved work stay on this device.
+      </p>
+      <div class="actions" id="actions" hidden>
+        <button id="retry" class="primary">Retry startup</button
+        ><button id="export">Export diagnostics</button
+        ><button id="logs">Open logs folder</button>
+      </div>
+      <p id="feedback" class="feedback" role="status"></p>
+      <footer>
+        Local first. Always yours.<span
+          >External processing begins only with your consent.</span
+        >
+      </footer>
+    </main>
+    <script src="/startup-renderer.js"></script>
+  </body>
+</html>

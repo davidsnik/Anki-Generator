@@ -218,7 +218,11 @@ class EvidenceIndex:
                 if not region.get("is_original_visual", True):
                     continue
                 path = (
-                    self.data_root / doc["extraction"]["artifact_dir"] / region["image_path"]
+                    self.data_root
+                    / (
+                        region.get("storage_path")
+                        or f"{doc['extraction']['artifact_dir']}/{region['image_path']}"
+                    )
                 ).resolve()
                 if (
                     path.is_relative_to(self.data_root.resolve())

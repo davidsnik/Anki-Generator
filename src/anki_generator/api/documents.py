@@ -44,7 +44,7 @@ def list_documents(request: Request, course_id: str) -> list[dict[str, Any]]:
 
 
 @router.post("/courses/{course_id}/documents", status_code=201)
-async def upload_documents(
+def upload_documents(
     request: Request,
     course_id: str,
     files: Annotated[list[UploadFile], File()],
@@ -73,11 +73,13 @@ async def upload_documents(
     for index, upload in enumerate(files):
         name = safe_relative(requested_paths[index] if requested_paths else upload.filename or "")
         content = bytearray()
-        while chunk := await upload.read(1024 * 1024):
-            content.extend(chunk)
-            if len(content) > MAX_UPLOAD_BYTES:
-                raise ValueError(f"{name} exceeds the 200 MiB upload limit")
-        await upload.close()
+        try:
+            while chunk := upload.file.read(1024 * 1024):
+                content.extend(chunk)
+                if len(content) > MAX_UPLOAD_BYTES:
+                    raise ValueError(f"{name} exceeds the 200 MiB upload limit")
+        finally:
+            upload.file.close()
         total += len(content)
         if total > MAX_BATCH_BYTES:
             raise ValueError("Upload batch exceeds the 512 MiB limit")
@@ -100,11 +102,23 @@ async def upload_documents(
         raise ValueError("The upload contains no supported course documents")
     if len({name for name, _ in candidates}) != len(candidates):
         raise ValueError("The batch contains duplicate relative filenames")
+    prepared: list[tuple[str, str, str, int]] = []
+    for name, content in candidates:
+        # Hash/fsync immutable blobs before the short writer transaction. A
+        # waiting upload must not stall another course's processing checkpoints.
+        relative, digest = store_bytes(rt.data_root, content, Path(name).suffix)
+        prepared.append((name, relative, digest, len(content)))
+    candidates.clear()
+    del content
     imported: list[dict[str, Any]] = []
     with rt.sessions.begin() as session:
         ensure_idle(session, course_id)
-        for name, content in candidates:
-            relative, digest = store_bytes(rt.data_root, content, Path(name).suffix)
+        require(session, Course, course_id)
+        for name, relative, digest, size in prepared:
+            if not safe_storage_path(rt.data_root, relative).is_file():
+                raise ValueError(
+                    "A prepared source was removed during this upload. Retry the upload."
+                )
             document = session.scalar(
                 select(Document).where(
                     Document.course_id == course_id, Document.relative_path == name
@@ -122,7 +136,7 @@ async def upload_documents(
                     category=category,
                     authority=authority,
                     sha256=digest,
-                    size_bytes=len(content),
+                    size_bytes=size,
                     mime_type=mimetypes.guess_type(name)[0] or "application/octet-stream",
                     storage_path=relative,
                 )
@@ -235,9 +249,18 @@ def document_region(request: Request, document_id: str, region_id: str) -> FileR
             None,
         )
         if region is None:
+            from anki_generator.database.source_entities import SelectedSourceRegion
+            from anki_generator.services.source_corrections import selected_region_dict
+
+            selected = session.get(SelectedSourceRegion, region_id)
+            if selected and selected.document_id == document_id:
+                region = selected_region_dict(selected)
+        if region is None:
             raise LookupError("Source region not found; run local extraction first")
         directory = document.extraction.get("artifact_dir", "")
-        path = safe_storage_path(rt.data_root, f"{directory}/{region['image_path']}")
+        path = safe_storage_path(
+            rt.data_root, region.get("storage_path") or f"{directory}/{region['image_path']}"
+        )
         if not path.is_file():
             raise LookupError("Source image is missing; reprocess this document")
         return FileResponse(path, media_type="image/png")

@@ -51,7 +51,11 @@ def _sha256(path: Path) -> str:
 
 
 def extract_document(
-    path: Path, output_dir: Path, *, options: ExtractionOptions | None = None
+    path: Path,
+    output_dir: Path,
+    *,
+    options: ExtractionOptions | None = None,
+    page_numbers: list[int] | None = None,
 ) -> ExtractionResult:
     """Extract trusted local files directly; use the safe wrapper for uploads.
 
@@ -70,6 +74,11 @@ def extract_document(
     suffix = path.suffix.lower().removeprefix(".")
     if suffix not in {"pdf", "png", "jpg", "jpeg", "txt", "md", "tex", "docx", "pptx"}:
         raise ExtractionError(f"Unsupported document format: {suffix or '(no extension)'}")
+    if page_numbers is not None and suffix != "pdf":
+        if page_numbers != [1] or suffix not in {"png", "jpg", "jpeg"}:
+            raise ExtractionError(
+                "Targeted native page extraction requires PDF; Office pages use their rendered PDF"
+            )
     digest = _sha256(path)
     if output_dir.is_symlink():
         raise ExtractionError("The extraction output cannot be a symlink")
@@ -82,7 +91,9 @@ def extract_document(
         if suffix == "pdf":
             from anki_generator.ingestion.pdf_extract import extract_pdf
 
-            result = extract_pdf(path, output_dir, media_dir, digest, options)
+            result = extract_pdf(
+                path, output_dir, media_dir, digest, options, page_numbers=page_numbers
+            )
         elif suffix in {"png", "jpg", "jpeg"}:
             result = _extract_image(path, output_dir, media_dir, digest, options)
         elif suffix in {"docx", "pptx"}:
@@ -300,7 +311,9 @@ def validate_office_archive(path: Path, options: ExtractionOptions) -> None:
             raise ExtractionError("Office archive does not contain the expected document structure")
 
 
-def _extraction_worker(path: str, output: str, options_data: dict) -> None:
+def _extraction_worker(
+    path: str, output: str, options_data: dict, page_numbers: list[int] | None = None
+) -> None:
     """Spawn target; a native-parser crash cannot crash the API/job process."""
     options = ExtractionOptions.model_validate(options_data)
     try:
@@ -311,7 +324,9 @@ def _extraction_worker(path: str, output: str, options_data: dict) -> None:
             resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
             resource.setrlimit(resource.RLIMIT_CPU, (options.worker_cpu_seconds,) * 2)
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-        result = extract_document(Path(path), Path(output), options=options)
+        result = extract_document(
+            Path(path), Path(output), options=options, page_numbers=page_numbers
+        )
         (Path(output) / "result.json").write_text(result.model_dump_json(), encoding="utf-8")
     except BaseException as error:
         # These diagnostics stay local and intentionally omit tracebacks/source text.
@@ -321,7 +336,11 @@ def _extraction_worker(path: str, output: str, options_data: dict) -> None:
 
 
 def extract_document_safely(
-    path: Path, output_dir: Path, *, options: ExtractionOptions | None = None
+    path: Path,
+    output_dir: Path,
+    *,
+    options: ExtractionOptions | None = None,
+    page_numbers: list[int] | None = None,
 ) -> ExtractionResult:
     """Run parsers in an isolated, bounded subprocess and publish complete artifacts.
 
@@ -341,7 +360,7 @@ def extract_document_safely(
     with tempfile.TemporaryDirectory(prefix=".extraction-", dir=output_dir) as temp:
         process = multiprocessing.get_context("spawn").Process(
             target=_extraction_worker,
-            args=(str(path.absolute()), temp, options.model_dump()),
+            args=(str(path.absolute()), temp, options.model_dump(), page_numbers),
         )
         process.start()
         deadline = monotonic() + options.worker_timeout_seconds
@@ -364,6 +383,16 @@ def extract_document_safely(
                 f"Document parser stopped (exit {process.exitcode}); resource limit or damaged file"
             )
         result = ExtractionResult.model_validate_json((root / "result.json").read_text())
+        if result.rendered_source_path:
+            from pathlib import PurePosixPath
+
+            relative = PurePosixPath(result.rendered_source_path)
+            if relative.is_absolute() or ".." in relative.parts or "\\" in str(relative):
+                raise ExtractionError("Unsafe converted-source output path")
+            rendered_source = root / relative
+            rendered_destination = output_dir / relative
+            rendered_destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(rendered_source, rendered_destination)
         for page in result.pages:
             for region in page.regions:
                 source, destination = root / region.image_path, output_dir / region.image_path

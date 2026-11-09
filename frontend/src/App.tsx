@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -7,7 +7,9 @@ import {
   ChevronDown,
   CircleHelp,
   GraduationCap,
+  FlaskConical,
   LayoutDashboard,
+  ListTodo,
   Menu,
   Moon,
   Plus,
@@ -22,19 +24,29 @@ import type { Bootstrap } from './services/types';
 import { ErrorPanel, Loading, ToastProvider } from './components/UI';
 import { Dashboard, CreateCourseModal, Welcome } from './pages/Dashboard';
 import { CoursePage } from './pages/Course';
+import { EvaluationPage } from './features/Evaluation';
+import { TaskLiveProvider, GlobalTaskIndicator, useTasks } from './features/tasks/live';
+import { TasksPage, TaskDetailPage } from './features/tasks/TasksPage';
 import { SettingsPage } from './pages/Settings';
+import { DesktopEvents } from './features/Desktop';
+import { desktopBridge } from './services/desktop';
 export default function App() {
   return (
     <ToastProvider>
-      <Workspace />
+      <DesktopEvents />
+      <TaskLiveProvider>
+        <Workspace />
+      </TaskLiveProvider>
     </ToastProvider>
   );
 }
 function Workspace() {
   const query = useQuery({ queryKey: ['bootstrap'], queryFn: bootstrap, refetchInterval: 10000 });
+  const tasks = useTasks();
   const [create, setCreate] = useState(false);
   const [mobile, setMobile] = useState(false);
   const [theme, setTheme] = useState(localStorage.getItem('anki-theme') ?? 'light');
+  const desktopThemeLoaded = useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
   useEffect(() => {
@@ -47,6 +59,18 @@ function Workspace() {
     window.addEventListener('anki-theme-change', listener);
     return () => window.removeEventListener('anki-theme-change', listener);
   }, []);
+  useEffect(() => {
+    if (!desktopBridge() || !query.data || desktopThemeLoaded.current) return;
+    desktopThemeLoaded.current = true;
+    const preference = String(query.data.settings.theme || 'system');
+    setTheme(
+      preference === 'system'
+        ? window.matchMedia?.('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light'
+        : preference,
+    );
+  }, [query.data]);
   if (query.isPending)
     return (
       <div className="startup">
@@ -56,13 +80,13 @@ function Workspace() {
         <Loading />
       </div>
     );
-  if (query.isError)
+  if (query.isError && !query.data)
     return (
       <main className="startup">
         <ErrorPanel error={query.error} retry={() => query.refetch()} />
       </main>
     );
-  const data = query.data;
+  const data = query.data!;
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobile ? 'open' : ''}`}>
@@ -90,6 +114,19 @@ function Workspace() {
           <NavLink to="/courses">
             <BookOpen size={19} /> My courses
             <span className="nav-count">{data.courses.length}</span>
+          </NavLink>
+          <NavLink to="/tasks" aria-label="Tasks">
+            <ListTodo size={19} />
+            Tasks
+            {tasks.data && tasks.data.counts.active + tasks.data.counts.queued > 0 && (
+              <span className="nav-count" aria-hidden="true">
+                {tasks.data.counts.active + tasks.data.counts.queued}
+              </span>
+            )}
+          </NavLink>
+          <NavLink to="/evaluation">
+            <FlaskConical size={19} />
+            Evaluation
           </NavLink>
         </nav>
         <div className="nav-label courses-label">
@@ -165,14 +202,19 @@ function Workspace() {
             <strong>
               {location.pathname === '/settings'
                 ? 'Settings'
-                : location.pathname.startsWith('/courses/')
-                  ? 'Course workspace'
-                  : location.pathname === '/courses'
-                    ? 'My courses'
-                    : 'Overview'}
+                : location.pathname.startsWith('/tasks')
+                  ? 'Tasks'
+                  : location.pathname === '/evaluation'
+                    ? 'Evaluation'
+                    : location.pathname.startsWith('/courses/')
+                      ? 'Course workspace'
+                      : location.pathname === '/courses'
+                        ? 'My courses'
+                        : 'Overview'}
             </strong>
           </div>
           <div className="topbar-right">
+            <GlobalTaskIndicator />
             <span className="local-indicator">
               <span /> Running locally
             </span>
@@ -194,6 +236,9 @@ function Workspace() {
             />
             <Route path="/courses/:courseId/*" element={<CoursePage />} />
             <Route path="/settings" element={<SettingsPage bootstrap={data} />} />
+            <Route path="/tasks" element={<TasksPage courses={data.courses} />} />
+            <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
+            <Route path="/evaluation" element={<EvaluationPage bootstrap={data} />} />
             <Route
               path="*"
               element={

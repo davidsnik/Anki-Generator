@@ -21,33 +21,43 @@ import {
   SectionHead,
   useToast,
 } from '../components/UI';
+import { ExportPreview } from '../features/ExportPreview';
+import { Pagination } from '../features/Pagination';
+import type { PageResult } from '../features/Pagination';
 import { MathText } from '../components/MathText';
 export function ExportsPage({ course }: { course: Course }) {
   const [format, setFormat] = useState('apkg');
   const [deck, setDeck] = useState(course.deck_name || course.name);
   const [selection, setSelection] = useState<Set<string> | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [blocked, setBlocked] = useState(true);
   const client = useQueryClient();
   const toast = useToast();
   const cards = useQuery({
-    queryKey: ['cards', course.id],
-    queryFn: async () => list<Card>(await api(`/courses/${course.id}/cards`)),
+    queryKey: ['export-cards-page', course.id, offset],
+    queryFn: () =>
+      api<PageResult<Card>>(`/courses/${course.id}/cards-page?offset=${offset}&limit=25`),
   });
   const history = useQuery({
     queryKey: ['exports', course.id],
     queryFn: async () => list<ExportRecord>(await api(`/courses/${course.id}/exports`)),
   });
-  const eligible = (cards.data || []).filter(
+  const eligible = (cards.data?.items || []).filter(
     (c) =>
       c.review_status === 'approved' &&
       !['failed', 'rejected', 'duplicate'].includes(c.verification_status),
   );
-  const selected = selection ?? new Set(eligible.map((c) => c.id));
+  const selected =
+    selection ?? new Set((format === 'apkg' ? eligible : cards.data?.items || []).map((c) => c.id));
+  const selectedCount =
+    selection?.size ??
+    (format === 'apkg' ? (course.stats?.approved ?? 0) : (cards.data?.total ?? 0));
   const exportCards = useMutation({
     mutationFn: () =>
       write<ExportRecord>(`/courses/${course.id}/exports`, {
         format,
         deck_name: deck,
-        card_ids: Array.from(selected),
+        ...(selection ? { card_ids: Array.from(selection) } : {}),
       }),
     onSuccess: (record) => {
       client.invalidateQueries({ queryKey: ['exports', course.id] });
@@ -66,6 +76,11 @@ export function ExportsPage({ course }: { course: Course }) {
       <SectionHead title="Take your understanding with you">
         A real Anki deck. Stable identities. Your original evidence along for the ride.
       </SectionHead>
+      <ExportPreview
+        courseId={course.id}
+        selection={selection ? Array.from(selection) : null}
+        onBlocked={setBlocked}
+      />
       <div className="export-layout">
         <section className="panel export-builder">
           <div className="export-icon">
@@ -103,30 +118,35 @@ export function ExportsPage({ course }: { course: Course }) {
           </label>
           <div className="export-stats">
             <div>
-              <strong>{selected.size}</strong>
+              <strong>{selectedCount}</strong>
               <span>cards selected</span>
             </div>
             <div>
               <strong>
                 {
                   new Set(
-                    (cards.data || [])
+                    (cards.data?.items || [])
                       .filter((c) => selected.has(c.id))
                       .flatMap((c) => c.concept_ids || [c.concept_id])
                       .filter(Boolean),
                   ).size
                 }
               </strong>
-              <span>concepts represented</span>
+              <span>concepts on displayed page</span>
             </div>
             <div>
-              <strong>{Math.ceil((selected.size * 15) / 60)} min</strong>
+              <strong>{Math.ceil((selectedCount * 15) / 60)} min</strong>
               <span>estimated initial review</span>
             </div>
           </div>
           <button
             className="button primary export-button"
-            disabled={exportCards.isPending || !selected.size || !deck.trim()}
+            disabled={
+              exportCards.isPending ||
+              !selectedCount ||
+              !deck.trim() ||
+              (format === 'apkg' && blocked)
+            }
             onClick={() => exportCards.mutate()}
           >
             <Download size={17} />
@@ -150,7 +170,9 @@ export function ExportsPage({ course }: { course: Course }) {
                   setSelection(
                     selected.size
                       ? new Set()
-                      : new Set((format === 'apkg' ? eligible : cards.data || []).map((c) => c.id)),
+                      : new Set(
+                          (format === 'apkg' ? eligible : cards.data?.items || []).map((c) => c.id),
+                        ),
                   )
                 }
               >
@@ -158,27 +180,38 @@ export function ExportsPage({ course }: { course: Course }) {
               </button>
             }
           />
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={selection === null}
+              onChange={(e) => setSelection(e.target.checked ? null : new Set())}
+            />
+            All {format === 'apkg' ? 'eligible approved cards' : 'records'} across this course
+          </label>
           <p className="field-help">
-            {eligible.length} approved cards are ready for Anki. Review pending cards in the
-            Flashcards tab.
+            For a specific selection, turn off the all-course selection and check individual cards.
+          </p>
+          <p className="field-help">
+            {eligible.length} approved cards on this page are ready for Anki. Review pending cards
+            in the Flashcards tab.
           </p>
           {cards.isPending ? (
             <Loading />
           ) : cards.error ? (
             <ErrorPanel error={cards.error} />
-          ) : !cards.data.length ? (
+          ) : !cards.data.items.length ? (
             <Empty icon={CheckCheck} title="Your deck starts with a good question">
               Generate or add cards, then inspect and approve them before exporting.
             </Empty>
           ) : (
             <div className="export-card-selection">
-              {cards.data.map((card) => {
+              {cards.data.items.map((card) => {
                 const allowed = format !== 'apkg' || eligible.some((c) => c.id === card.id);
                 return (
                   <label className={!allowed ? 'disabled' : ''} key={card.id}>
                     <input
                       type="checkbox"
-                      disabled={!allowed}
+                      disabled={!allowed || selection === null}
                       checked={selected.has(card.id)}
                       onChange={() => toggle(card.id)}
                     />
@@ -193,6 +226,16 @@ export function ExportsPage({ course }: { course: Course }) {
               })}
             </div>
           )}
+          <Pagination
+            offset={offset}
+            total={cards.data?.total ?? 0}
+            limit={25}
+            onChange={setOffset}
+          />
+          <p className="field-help">
+            Review burden is a planning estimate of 15 seconds per card, not measured study
+            performance.
+          </p>
         </section>
       </div>
       <section className="panel export-history">

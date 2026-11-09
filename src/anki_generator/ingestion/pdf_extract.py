@@ -89,7 +89,13 @@ def _bbox(raw: tuple | list | pymupdf.Rect, bounds: pymupdf.Rect) -> BoundingBox
 
 
 def extract_pdf(
-    path: Path, output_dir: Path, media_dir: Path, digest: str, options: ExtractionOptions
+    path: Path,
+    output_dir: Path,
+    media_dir: Path,
+    digest: str,
+    options: ExtractionOptions,
+    *,
+    page_numbers: list[int] | None = None,
 ) -> ExtractionResult:
     pages = []
     warnings = []
@@ -105,10 +111,23 @@ def extract_pdf(
         total_pages = document.page_count
         if document.is_repaired:
             warnings.append("PDF required structural repair; inspect original evidence carefully")
-        if total_pages > options.max_pages:
+        if page_numbers is not None:
+            if not page_numbers or any(
+                type(number) is not int or number < 1 or number > total_pages
+                for number in page_numbers
+            ):
+                raise ExtractionError("Selected PDF page does not exist")
+            selected = sorted(set(page_numbers))
+            if len(selected) != total_pages:
+                warnings.append("Targeted extraction contains only explicitly selected pages")
+                partial = True
+        else:
+            selected = list(range(1, total_pages + 1))
+        if len(selected) > options.max_pages:
             warnings.append(f"Only {options.max_pages} of {total_pages} pages fit the page limit")
             partial = True
-        for index in range(min(total_pages, options.max_pages)):
+        for number in selected[: options.max_pages]:
+            index = number - 1
             page_warnings = []
             blocks: list[TextBlock] = []
             regions: list[SourceRegion] = []

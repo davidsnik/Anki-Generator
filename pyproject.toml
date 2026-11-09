@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.115,<1",
     "genanki>=0.13,<1",
     "keyring>=25,<27",
+    "numpy>=2,<3",
     "openai>=2,<3",
     "pillow>=11,<13",
     "pydantic>=2.12,<3",
@@ -25,16 +26,23 @@ dependencies = [
 [project.scripts]
 anki-generator = "anki_generator.cli:app"
 
+[project.optional-dependencies]
+anki-integration = [
+    "anki==26.9.4",
+]
+
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14"]
 build-backend = "uv_build"
 
 [dependency-groups]
 dev = ["httpx>=0.28,<1", "pytest>=8.4,<10", "ruff>=0.14,<1"]
+desktop-build = ["pyinstaller==6.22.3"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = ["anki_integration: official Anki core imports into disposable temporary collections"]
 
 [tool.ruff]
 target-version = "py312"

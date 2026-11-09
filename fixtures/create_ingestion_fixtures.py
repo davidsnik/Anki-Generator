@@ -12,9 +12,10 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 import pymupdf
 from docx import Document
+from docx.shared import Inches as DocxInches
 from PIL import Image, ImageDraw
 from pptx import Presentation
-from pptx.util import Inches
+from pptx.util import Inches, Pt
 
 ROOT = Path(__file__).parent / "ingestion"
 
@@ -96,6 +97,23 @@ def build() -> None:
     page.insert_image(page.rect, filename=str(ROOT / "scan.png"))
     save(document, "scanned.pdf")
 
+    # Deliberately incorrect invisible OCR layer; visible mathematics is correct.
+    corrected_scan = Image.new("RGB", (1000, 600), "white")
+    draw = ImageDraw.Draw(corrected_scan)
+    draw.text((45, 50), "For a right triangle, a^2 + b^2 = c^2.", fill="black", font_size=35)
+    draw.text((45, 115), "The right-angle assumption is necessary.", fill="black", font_size=30)
+    draw.line([(100, 500), (100, 230), (600, 500), (100, 500)], fill="#4338ca", width=5)
+    draw.text((55, 350), "a", fill="black", font_size=32)
+    draw.text((330, 520), "b", fill="black", font_size=32)
+    draw.text((370, 320), "c", fill="black", font_size=32)
+    stream = BytesIO()
+    corrected_scan.save(stream, format="PNG")
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=360)
+    page.insert_image(page.rect, stream=stream.getvalue())
+    page.insert_text((27, 45), "For a right triangle, a^2 - b^2 = c^2.", fontsize=17, render_mode=3)
+    save(document, "misread-math.pdf")
+
     document = Document()
     document.add_heading("Probability lecture", 0)
     document.add_paragraph(
@@ -107,7 +125,7 @@ def build() -> None:
     table.cell(0, 1).text = "Assumption"
     table.cell(1, 0).text = "Conditional probability"
     table.cell(1, 1).text = "P(B)>0"
-    document.add_picture(str(ROOT / "diagram.png"))
+    document.add_picture(str(ROOT / "diagram.png"), width=DocxInches(5.8))
     document.core_properties.created = datetime(2000, 1, 1, tzinfo=UTC)
     document.core_properties.modified = datetime(2000, 1, 1, tzinfo=UTC)
     document.save(ROOT / "sample.docx")
@@ -117,7 +135,10 @@ def build() -> None:
     slide = presentation.slides.add_slide(presentation.slide_layouts[1])
     slide.shapes.title.text = "Conditional probability"
     slide.placeholders[1].text = "P(A|B)=P(A intersection B)/P(B)\nAssume P(B)>0."
-    slide.shapes.add_picture(str(ROOT / "diagram.png"), Inches(5), Inches(2), width=Inches(4))
+    slide.placeholders[1].width = Inches(4.4)
+    for paragraph in slide.placeholders[1].text_frame.paragraphs:
+        paragraph.font.size = Pt(22)
+    slide.shapes.add_picture(str(ROOT / "diagram.png"), Inches(5.1), Inches(2.6), width=Inches(4.3))
     presentation.core_properties.created = datetime(2000, 1, 1, tzinfo=UTC)
     presentation.core_properties.modified = datetime(2000, 1, 1, tzinfo=UTC)
     presentation.save(ROOT / "sample.pptx")

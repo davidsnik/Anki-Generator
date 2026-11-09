@@ -10,10 +10,12 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 import pytest
+from alembic.script import ScriptDirectory
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import select
 
+from anki_generator.database.connection import migration_config
 from anki_generator.database.entities import ApplicationSetting, Card, Document, Run
 from anki_generator.services import storage
 
@@ -546,7 +548,11 @@ def test_run_consent_keys_controls_and_active_input_guards(
         api_client.patch(
             f"/api/courses/{course['id']}", json={"criteria": {"coverage": "focused"}}
         ).status_code
-        == 400
+        == 200
+    )
+    assert (
+        api_client.get(f"/api/runs/{run['id']}").json()["config"]["criteria"]
+        == run["config"]["criteria"]
     )
     assert api_client.post(f"/api/runs/{run['id']}/pause").json()["status"] == "paused"
     assert api_client.post(f"/api/runs/{run['id']}/resume").json()["status"] == "queued"
@@ -592,7 +598,8 @@ def test_backup_contains_consistent_database_originals_and_migration_version(
             == "Analysis"
         )
         assert restored.execute("SELECT COUNT(*) FROM documents").fetchone()[0] == 1
-        assert restored.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0001"
+        head = ScriptDirectory.from_config(migration_config()).get_current_head()
+        assert restored.execute("SELECT version_num FROM alembic_version").fetchone()[0] == head
 
 
 def test_stored_path_tampering_cannot_read_outside_application(

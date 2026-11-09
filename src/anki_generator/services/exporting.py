@@ -8,13 +8,15 @@ import json
 import re
 import shutil
 import tempfile
+import time
 from pathlib import Path
 
 import genanki
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from anki_generator.database.entities import Card, Course, Document, ExportRecord, Page, new_id
+from anki_generator.database.pipeline_entities import ExportSnapshot
 from anki_generator.domain import ExportInput
 from anki_generator.services.records import card_view, require
 from anki_generator.services.storage import safe_storage_path
@@ -67,6 +69,51 @@ CLOZE_MODEL = genanki.Model(
 )
 
 
+class StableModifiedNote(genanki.Note):
+    """Unchanged notes retain their import timestamp across package rebuilds."""
+
+    def __init__(self, *, modified_at: int, **kwargs):
+        super().__init__(**kwargs)
+        self.modified_at = modified_at
+
+    def write_to_db(self, cursor, timestamp: float, deck_id, id_gen):
+        return super().write_to_db(cursor, self.modified_at, deck_id, id_gen)
+
+
+def _anki_modification_times(session, course_id, cards):
+    from anki_generator.services.export_preview import content_hash
+
+    ranked = (
+        select(
+            ExportSnapshot.note_guid,
+            ExportSnapshot.content_hash,
+            ExportSnapshot.snapshot,
+            func.row_number()
+            .over(
+                partition_by=ExportSnapshot.note_guid,
+                order_by=(ExportRecord.created_at.desc(), ExportRecord.id.desc()),
+            )
+            .label("position"),
+        )
+        .join(ExportRecord, ExportRecord.id == ExportSnapshot.export_id)
+        .where(ExportRecord.course_id == course_id, ExportRecord.format == "apkg")
+        .subquery()
+    )
+    prior = {
+        row.note_guid: row for row in session.execute(select(ranked).where(ranked.c.position == 1))
+    }
+    result = {}
+    for card in cards:
+        previous = prior.get(card.note_guid)
+        old_time = int(previous.snapshot.get("anki_mtime", 0)) if previous else 0
+        result[card.note_guid] = (
+            old_time
+            if old_time and previous.content_hash == content_hash(card)
+            else max(int(time.time()), old_time + 1)
+        )
+    return result
+
+
 def render_text(value: str) -> str:
     """Escape all user/model HTML; retain MathJax and Anki cloze syntax."""
     value = re.sub(r"\$\$(.+?)\$\$", lambda match: r"\[" + match[1] + r"\]", value, flags=re.S)
@@ -94,6 +141,12 @@ def create_export(
     course: Course = require(session, Course, course_id)
     cards = selected_cards(session, course_id, values.card_ids)
     if values.format == "apkg":
+        from anki_generator.services.identity import unresolved_for_cards
+
+        if unresolved_for_cards(session, cards):
+            raise ValueError(
+                "Resolve ambiguous identity proposals before exporting affected cards to Anki"
+            )
         # An explicit selection never bypasses approval or a failed quality gate.
         eligible = [
             card
@@ -108,6 +161,9 @@ def create_export(
         cards = eligible
     if not cards:
         raise ValueError("No eligible cards. Review and approve cards before exporting to Anki.")
+    anki_mtimes = (
+        _anki_modification_times(session, course_id, cards) if values.format == "apkg" else {}
+    )
     export_id = new_id()
     relative = f"exports/{export_id}.{values.format}"
     destination = safe_storage_path(data_root, relative)
@@ -117,7 +173,9 @@ def create_export(
         staging_path = Path(staging)
         temporary = staging_path / f"deck.{values.format}"
         if values.format == "apkg":
-            _write_anki(session, data_root, course, cards, deck_name, temporary, staging_path)
+            _write_anki(
+                session, data_root, course, cards, deck_name, temporary, staging_path, anki_mtimes
+            )
         else:
             payloads = [card_view(session, card, detail=True) for card in cards]
             if values.format == "json":
@@ -179,6 +237,27 @@ def create_export(
     )
     session.add(result)
     session.flush()
+    from anki_generator.services.export_preview import card_snapshot, content_hash
+
+    for card in cards:
+        session.add(
+            ExportSnapshot(
+                export_id=result.id,
+                card_id=card.id,
+                note_guid=card.note_guid,
+                revision_number=card.revision_number,
+                content_hash=content_hash(card),
+                snapshot={
+                    **card_snapshot(card),
+                    **(
+                        {"anki_mtime": anki_mtimes[card.note_guid]}
+                        if values.format == "apkg"
+                        else {}
+                    ),
+                },
+            )
+        )
+    session.flush()
     return result
 
 
@@ -190,6 +269,7 @@ def _write_anki(
     deck_name: str,
     destination: Path,
     staging: Path,
+    anki_mtimes: dict[str, int],
 ) -> None:
     deck_id = (
         int.from_bytes(hashlib.sha256(course.id.encode()).digest()[:4]) & 0x3FFFFFFF
@@ -239,9 +319,21 @@ def _write_anki(
                 else None
             )
             if region is None:
+                from anki_generator.services.source_corrections import resolve_source_region
+
+                region = resolve_source_region(
+                    session,
+                    document.id,
+                    reference["page_number"],
+                    reference.get("region_id"),
+                    page.regions if page else [],
+                )
+            if region is None:
                 raise ValueError("A referenced image region is missing; reprocess the source")
             artifact_dir = document.extraction.get("artifact_dir", "")
-            image = safe_storage_path(data_root, f"{artifact_dir}/{region['image_path']}")
+            image = safe_storage_path(
+                data_root, region.get("storage_path") or f"{artifact_dir}/{region['image_path']}"
+            )
             if not image.is_file():
                 raise ValueError("A referenced source image is missing from local storage")
             name = "image_" + hashlib.sha256(image.read_bytes()).hexdigest() + image.suffix.lower()
@@ -264,7 +356,8 @@ def _write_anki(
             render_text(card.id),
         ]
         tags = [re.sub(r"[^\w:-]", "_", tag) for tag in card.tags if tag.strip()]
-        note = genanki.Note(
+        note = StableModifiedNote(
+            modified_at=anki_mtimes[card.note_guid],
             model=CLOZE_MODEL if card.card_type == "cloze" else BASIC_MODEL,
             fields=fields,
             tags=tags,

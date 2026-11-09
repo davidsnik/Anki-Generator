@@ -1,0 +1,365 @@
+{
+  "schema_version": "1",
+  "name": "Synthetic probability regression benchmark",
+  "description": "Repository-authored sources and deliberately constructed labels. No independent human review or empirical real-course accuracy is claimed. Redundancy is deck-relative. Use as a format/workflow example, not a held-out quality score.",
+  "course_id": null,
+  "provenance": "synthetic",
+  "version": 1,
+  "reviewer": "",
+  "sources": [
+    {
+      "relative_path": "fixtures/example-course/01-lecture.md",
+      "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+      "synthetic": true
+    },
+    {
+      "relative_path": "fixtures/example-course/02-exercises.txt",
+      "sha256": "7dbb39bc1a7bcff1df1ed19df658b0fe9c3a040e6115bdc9e470a24db38fd8a2",
+      "synthetic": true
+    },
+    {
+      "relative_path": "fixtures/ingestion/misread-math.pdf",
+      "sha256": "56976ec7f7ffb9c7e7c0a832afaad8ad5bf1c7d489da4bc2d8ce7c55c98fe877",
+      "synthetic": true
+    }
+  ],
+  "reference_concepts": [
+    {
+      "id": "conditional_probability",
+      "label": "Conditional probability",
+      "topic": "Probability",
+      "kind": "definition",
+      "importance": 3,
+      "assumptions": [
+        "P(B) > 0"
+      ],
+      "competencies": [
+        "Choose the conditioning event and normalize within it."
+      ],
+      "source": {
+        "relative_path": "fixtures/example-course/01-lecture.md",
+        "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+        "synthetic": true,
+        "section": "Conditional probability"
+      }
+    },
+    {
+      "id": "positive_conditioning",
+      "label": "Positive-probability conditioning assumption",
+      "topic": "Probability",
+      "kind": "assumption",
+      "importance": 3,
+      "assumptions": [
+        "The elementary ratio requires P(B) > 0."
+      ],
+      "source": {
+        "relative_path": "fixtures/example-course/01-lecture.md",
+        "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+        "synthetic": true,
+        "section": "Conditional probability"
+      }
+    },
+    {
+      "id": "independence",
+      "label": "Independence",
+      "topic": "Probability",
+      "kind": "definition",
+      "importance": 3,
+      "competencies": [
+        "Compare joint probability with the product of marginals."
+      ],
+      "source": {
+        "relative_path": "fixtures/example-course/01-lecture.md",
+        "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+        "synthetic": true,
+        "section": "Independence"
+      }
+    },
+    {
+      "id": "disjoint_positive",
+      "label": "Disjoint positive-probability events are dependent",
+      "topic": "Probability",
+      "kind": "common_mistake",
+      "importance": 2,
+      "assumptions": [
+        "P(A)>0",
+        "P(B)>0",
+        "A and B are disjoint"
+      ],
+      "source": {
+        "relative_path": "fixtures/example-course/01-lecture.md",
+        "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+        "synthetic": true,
+        "section": "Independence"
+      }
+    },
+    {
+      "id": "indicator_expectation",
+      "label": "Indicator expectation",
+      "topic": "Expectation",
+      "kind": "identity",
+      "importance": 2,
+      "source": {
+        "relative_path": "fixtures/example-course/01-lecture.md",
+        "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+        "synthetic": true,
+        "section": "Bernoulli and indicator variables"
+      }
+    },
+    {
+      "id": "linearity",
+      "label": "Linearity of expectation",
+      "topic": "Expectation",
+      "kind": "theorem",
+      "importance": 3,
+      "assumptions": [
+        "X and Y are integrable"
+      ],
+      "competencies": [
+        "Apply linearity to dependent random variables."
+      ],
+      "source": {
+        "relative_path": "fixtures/example-course/01-lecture.md",
+        "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+        "synthetic": true,
+        "section": "Bernoulli and indicator variables"
+      }
+    },
+    {
+      "id": "linearity_without_independence",
+      "label": "Linearity does not require independence",
+      "topic": "Expectation",
+      "kind": "competency",
+      "importance": 3,
+      "competencies": [
+        "Explain why Y=X does not invalidate linearity."
+      ],
+      "source": {
+        "relative_path": "fixtures/example-course/02-exercises.txt",
+        "sha256": "7dbb39bc1a7bcff1df1ed19df658b0fe9c3a040e6115bdc9e470a24db38fd8a2",
+        "synthetic": true,
+        "section": "Exercise 2"
+      }
+    }
+  ],
+  "reference_cards": [
+    {
+      "id": "conditioning_good",
+      "question": "For events A and B with P(B)>0, what is P(A|B)?",
+      "answer": "P(A|B)=P(A intersection B)/P(B).",
+      "concept_ids": [
+        "conditional_probability",
+        "positive_conditioning"
+      ],
+      "expected_label": "correct_useful",
+      "label_origin": "synthetic",
+      "dimensions": {
+        "factual_correct": true,
+        "mathematical_correct": true,
+        "assumptions_complete": true,
+        "atomic": true,
+        "source_correct": true,
+        "useful": true,
+        "unambiguous": true
+      },
+      "sources": [
+        {
+          "relative_path": "fixtures/example-course/01-lecture.md",
+          "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+          "synthetic": true,
+          "section": "Conditional probability"
+        }
+      ],
+      "rationale": "States the required nonzero denominator and one retrieval target.",
+      "reviewer": "Synthetic fixture authoring",
+      "independent": false
+    },
+    {
+      "id": "linearity_good",
+      "question": "For integrable X and Y, does E[X+Y]=E[X]+E[Y] require independence?",
+      "answer": "No. Linearity holds for integrable random variables even when they are dependent.",
+      "concept_ids": [
+        "linearity",
+        "linearity_without_independence"
+      ],
+      "expected_label": "correct_useful",
+      "label_origin": "synthetic",
+      "dimensions": {
+        "factual_correct": true,
+        "assumptions_complete": true,
+        "atomic": true,
+        "useful": true,
+        "unambiguous": true
+      },
+      "sources": [
+        {
+          "relative_path": "fixtures/example-course/01-lecture.md",
+          "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+          "synthetic": true,
+          "section": "Bernoulli and indicator variables"
+        }
+      ],
+      "rationale": "Distinguishes a transferable expectation rule from independence-dependent rules.",
+      "reviewer": "Synthetic fixture authoring",
+      "independent": false
+    },
+    {
+      "id": "conditioning_missing_assumption",
+      "question": "What is P(A|B) for any events A and B?",
+      "answer": "P(A intersection B)/P(B).",
+      "concept_ids": [
+        "conditional_probability",
+        "positive_conditioning"
+      ],
+      "expected_label": "needs_improvement",
+      "label_origin": "synthetic",
+      "dimensions": {
+        "assumptions_complete": false,
+        "unambiguous": false
+      },
+      "sources": [
+        {
+          "relative_path": "fixtures/example-course/01-lecture.md",
+          "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+          "synthetic": true,
+          "section": "Conditional probability"
+        }
+      ],
+      "rationale": "The question includes P(B)=0, where this elementary ratio is undefined.",
+      "reviewer": "Synthetic fixture authoring",
+      "independent": false
+    },
+    {
+      "id": "independence_wrong",
+      "question": "Are disjoint events of positive probability independent?",
+      "answer": "Yes, because they cannot occur together.",
+      "concept_ids": [
+        "disjoint_positive",
+        "independence"
+      ],
+      "expected_label": "incorrect",
+      "label_origin": "synthetic",
+      "dimensions": {
+        "factual_correct": false,
+        "mathematical_correct": false
+      },
+      "sources": [
+        {
+          "relative_path": "fixtures/example-course/01-lecture.md",
+          "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+          "synthetic": true,
+          "section": "Independence"
+        }
+      ],
+      "rationale": "Their intersection has probability zero but the product of their positive probabilities is nonzero.",
+      "reviewer": "Synthetic fixture authoring",
+      "independent": false
+    },
+    {
+      "id": "probability_ambiguous",
+      "question": "What is probability?",
+      "answer": "A number.",
+      "concept_ids": [],
+      "expected_label": "ambiguous",
+      "label_origin": "synthetic",
+      "dimensions": {
+        "unambiguous": false,
+        "useful": false,
+        "atomic": false
+      },
+      "sources": [
+        {
+          "relative_path": "fixtures/example-course/01-lecture.md",
+          "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+          "synthetic": true,
+          "section": "Conditional probability"
+        }
+      ],
+      "rationale": "The question specifies no object, interpretation, or mathematical retrieval target.",
+      "reviewer": "Synthetic fixture authoring",
+      "independent": false
+    },
+    {
+      "id": "linearity_redundant",
+      "question": "If X and Y have finite expectations but may be dependent, can their expectations be added to find E[X+Y]?",
+      "answer": "Yes: E[X+Y]=E[X]+E[Y].",
+      "concept_ids": [
+        "linearity",
+        "linearity_without_independence"
+      ],
+      "expected_label": "redundant",
+      "label_origin": "synthetic",
+      "dimensions": {
+        "factual_correct": true,
+        "useful": true,
+        "atomic": true
+      },
+      "sources": [
+        {
+          "relative_path": "fixtures/example-course/01-lecture.md",
+          "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+          "synthetic": true,
+          "section": "Bernoulli and indicator variables"
+        }
+      ],
+      "rationale": "Correct in isolation, but duplicates linearity_good in this benchmark deck.",
+      "reviewer": "Synthetic fixture authoring",
+      "independent": false
+    },
+    {
+      "id": "exercise_arbitrary",
+      "question": "What numeric answer was printed for Exercise 2?",
+      "answer": "0.6.",
+      "concept_ids": [
+        "linearity_without_independence"
+      ],
+      "expected_label": "not_worth_memorizing",
+      "label_origin": "synthetic",
+      "dimensions": {
+        "factual_correct": true,
+        "useful": false
+      },
+      "sources": [
+        {
+          "relative_path": "fixtures/example-course/02-exercises.txt",
+          "sha256": "7dbb39bc1a7bcff1df1ed19df658b0fe9c3a040e6115bdc9e470a24db38fd8a2",
+          "synthetic": true,
+          "section": "Exercise 2"
+        }
+      ],
+      "rationale": "Memorizes the worksheet answer rather than the reusable reasoning.",
+      "reviewer": "Synthetic fixture authoring",
+      "independent": false
+    }
+  ],
+  "annotations": [
+    {
+      "kind": "missing_concept",
+      "origin": "synthetic",
+      "label": "Nonzero conditioning denominator",
+      "source": {
+        "relative_path": "fixtures/example-course/01-lecture.md",
+        "sha256": "8931f7c1497fa84f394613dac674209f7d52144a18c56c719d752299f6e1b8a4",
+        "synthetic": true,
+        "section": "Conditional probability"
+      },
+      "expected": "Retain P(B)>0 as a separate important assumption target.",
+      "actual": "Intentionally omitted by a controlled extraction response.",
+      "rationale": "An independent audit must recover a target missed by the first inventory."
+    },
+    {
+      "kind": "interpretation_error",
+      "origin": "synthetic",
+      "label": "Wrong hidden OCR operator",
+      "source": {
+        "relative_path": "fixtures/ingestion/misread-math.pdf",
+        "sha256": "56976ec7f7ffb9c7e7c0a832afaad8ad5bf1c7d489da4bc2d8ce7c55c98fe877",
+        "synthetic": true,
+        "page_number": 1
+      },
+      "actual": "For a right triangle, a^2 - b^2 = c^2.",
+      "expected": "For a right triangle, a^2 + b^2 = c^2.",
+      "rationale": "The visible PDF contains a plus; its deliberately incorrect hidden text contains a minus. Compare the original visual and correct the transcription."
+    }
+  ]
+}

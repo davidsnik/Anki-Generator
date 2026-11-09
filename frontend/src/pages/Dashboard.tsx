@@ -30,6 +30,7 @@ import {
   useToast,
 } from '../components/UI';
 import { KeySetup } from './Settings';
+import { CourseTaskStatus } from '../features/tasks/CourseTaskStatus';
 export function CreateCourseModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -303,39 +304,49 @@ export function Dashboard({
       </SectionHead>
       <div className="courses-grid">
         {courses.map((course, i) => (
-          <Link className="course-card" key={course.id} to={`/courses/${course.id}`}>
-            <div className="course-card-top">
-              <div className={`course-icon color-${i % 4}`}>
-                <BookOpen size={23} />
+          <article className="course-card" key={course.id}>
+            <Link className="course-card-link" to={`/courses/${course.id}`}>
+              <div className="course-card-top">
+                <div className={`course-icon color-${i % 4}`}>
+                  <BookOpen size={23} />
+                </div>
+                <Badge tone={statusTone(course.last_run_status || course.stats?.last_status)}>
+                  {course.archived
+                    ? 'Archived'
+                    : (course.last_run_status || course.stats?.last_status) !== 'not_started' &&
+                        (course.last_run_status || course.stats?.last_status)
+                      ? human(course.last_run_status || course.stats?.last_status)
+                      : 'Ready to explore'}
+                </Badge>
               </div>
-              <Badge tone={statusTone(course.last_run_status || course.stats?.last_status)}>
-                {course.archived
-                  ? 'Archived'
-                  : (course.last_run_status || course.stats?.last_status) !== 'not_started' &&
-                      (course.last_run_status || course.stats?.last_status)
-                    ? human(course.last_run_status || course.stats?.last_status)
-                    : 'Ready to explore'}
-              </Badge>
-            </div>
-            <h3>{course.name}</h3>
-            <p>{course.description || 'A fresh perspective starts with your course materials.'}</p>
-            <div className="course-stats">
-              <span>
-                <FileText size={14} />
-                {course.stats?.documents ?? course.document_count ?? 0} documents
-              </span>
-              <span>
-                <Layers size={14} />
-                {course.stats?.cards ?? course.card_count ?? 0} cards
-              </span>
-            </div>
-            <div className="course-card-footer">
+              <h3>{course.name}</h3>
+              <p>
+                {course.description || 'A fresh perspective starts with your course materials.'}
+              </p>
+              <div className="course-stats">
+                <span>
+                  <FileText size={14} />
+                  {course.stats?.documents ?? course.document_count ?? 0} documents
+                </span>
+                <span>
+                  <Layers size={14} />
+                  {course.stats?.cards ?? course.card_count ?? 0} cards
+                </span>
+              </div>
+            </Link>
+            <CourseTaskStatus
+              courseId={course.id}
+              courseName={course.name}
+              compact
+              fallback={course.active_task}
+            />
+            <Link to={`/courses/${course.id}`} className="course-card-footer">
               <span>
                 {course.language || 'English'} · {course.deck_name || course.name}
               </span>
               <ArrowUpRight size={18} />
-            </div>
-          </Link>
+            </Link>
+          </article>
         ))}
         <button className="new-course-card" onClick={onCreate}>
           <span>
@@ -358,7 +369,7 @@ export function Dashboard({
             ) : (
               <div className="activity-list">
                 {data.recent_runs.slice(0, 5).map((run) => (
-                  <Link key={run.id} to={`/courses/${run.course_id}/processing`}>
+                  <Link key={run.id} to={`/tasks/${run.id}`}>
                     <div className={`activity-icon ${statusTone(run.status)}`}>
                       <Zap size={17} />
                     </div>

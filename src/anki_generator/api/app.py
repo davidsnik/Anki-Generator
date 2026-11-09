@@ -1,10 +1,8 @@
 """Single-origin local application with CSRF, origin, host, and body-size guards."""
 
+import asyncio
 import os
 import secrets
-import sqlite3
-import tempfile
-import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -14,13 +12,25 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
-from sqlalchemy import select
-from starlette.background import BackgroundTask
+from sqlalchemy import select, text
 from starlette.middleware.cors import CORSMiddleware
 
-from anki_generator.api import cards, courses, documents, exports, runs, settings
+from anki_generator.api import (
+    backups,
+    card_tools,
+    cards,
+    courses,
+    documents,
+    evaluations,
+    exports,
+    quality_inventory,
+    runs,
+    settings,
+    source_fidelity,
+    tasks,
+)
 from anki_generator.api.runtime import Runtime
-from anki_generator.api.security import RequestBodyLimit
+from anki_generator.api.security import RequestActivity, RequestBodyLimit
 from anki_generator.database.entities import Course, Run
 from anki_generator.llm import ProviderError
 from anki_generator.services.instance_lock import InstanceLock
@@ -34,30 +44,68 @@ def create_app(
     provider_factory: Any = None,
     start_worker: bool = True,
     frontend_directory: Path | None = None,
+    desktop_token: str | None = None,
+    desktop_state_directory: Path | None = None,
+    desktop_shutdown_timeout: float = 210,
 ) -> FastAPI:
+    if desktop_token is not None and (
+        not 32 <= len(desktop_token) <= 256
+        or not desktop_token.isascii()
+        or any(character.isspace() for character in desktop_token)
+    ):
+        raise ValueError("Desktop authentication requires a strong ASCII session token")
     root = data_root or Path(os.environ.get("ANKI_GENERATOR_DATA_DIR", "data/app"))
-    rt = Runtime(root, provider_factory=provider_factory)
+    root = root.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    root.chmod(0o700)
+    instance_lock = InstanceLock(root)
+    # Recovery and migrations mutate state too, so ownership must precede Runtime.
+    # The explicit test-only start_worker=False mode permits isolated test clients.
+    if start_worker:
+        instance_lock.acquire()
+    try:
+        rt = Runtime(root, provider_factory=provider_factory)
+    except BaseException:
+        instance_lock.release()
+        raise
     csrf_token = secrets.token_urlsafe(32)
-    instance_lock = InstanceLock(rt.data_root)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if start_worker:
-            instance_lock.acquire()
         try:
             if start_worker:
                 rt.runner.start()
             yield
         finally:
+            # If shutdown cannot stop a worker, retain ownership of its database.
+            # Releasing the process lock while that thread is alive is unsafe.
             if start_worker:
-                rt.runner.stop()
+                if desktop_token is None:
+                    rt.runner.stop()
+                else:
+                    # A deliberately long parser may exceed the ordinary grace
+                    # period. Keep ownership until its safe checkpoint; only an
+                    # explicitly confirmed force quit may interrupt that work.
+                    while True:
+                        try:
+                            await asyncio.to_thread(
+                                rt.runner.stop, timeout=desktop_shutdown_timeout
+                            )
+                            break
+                        except ValueError:
+                            continue
+            try:
+                rt.sessions.kw["bind"].dispose()
+                for item in rt.restore_tokens.values():
+                    item["temporary"].cleanup()
+            finally:
                 instance_lock.release()
-            rt.sessions.kw["bind"].dispose()
 
     app = FastAPI(title="Anki Generator", version="1.0", lifespan=lifespan)
     app.state.runtime = rt
     app.state.csrf_token = csrf_token
     app.add_middleware(RequestBodyLimit)
+    app.add_middleware(RequestActivity, runtime=rt)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
@@ -68,6 +116,12 @@ def create_app(
 
     @app.middleware("http")
     async def secure_local_requests(request: Request, call_next: Any):
+        if desktop_token is not None and not secrets.compare_digest(
+            request.headers.get("x-desktop-token", "").encode(), desktop_token.encode()
+        ):
+            return JSONResponse(
+                {"detail": "Desktop session authentication required"}, status_code=401
+            )
         host = request.url.hostname
         if host not in {"127.0.0.1", "localhost", "::1", "testserver"}:
             return JSONResponse({"detail": "Only loopback hosts are allowed"}, status_code=403)
@@ -92,7 +146,12 @@ def create_app(
             length = int(request.headers.get("content-length", "0"))
         except ValueError:
             return JSONResponse({"detail": "Invalid Content-Length"}, status_code=400)
-        if length > 522 * 1024 * 1024:
+        body_limit = (
+            (4096 + 10) * 1024 * 1024
+            if request.url.path == "/api/backup/validate"
+            else 522 * 1024 * 1024
+        )
+        if length > body_limit:
             return JSONResponse(
                 {"detail": "Request exceeds the 512 MiB upload limit"}, status_code=413
             )
@@ -170,49 +229,35 @@ def create_app(
                     "data_directory": str(rt.data_root),
                     "database": "SQLite / Alembic",
                     "external_provider": "OpenAI (explicit per-run consent)",
-                    "schema_version": "0001",
+                    "schema_version": session.scalar(
+                        text("SELECT version_num FROM alembic_version")
+                    ),
                     "worker": "persistent local worker",
                 },
             }
-
-    @app.post("/api/backup")
-    def backup() -> FileResponse:
-        # SQLite backup API gives a consistent DB snapshot, including WAL commits.
-        temporary = tempfile.TemporaryDirectory(prefix="anki-backup-")
-        directory = Path(temporary.name)
-        copied_db = directory / "application.sqlite3"
-        source = sqlite3.connect(rt.data_root / "application.sqlite3")
-        target = sqlite3.connect(copied_db)
-        try:
-            source.backup(target)
-        finally:
-            source.close()
-            target.close()
-        archive_path = directory / "anki-generator-backup.zip"
-        with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
-            archive.write(copied_db, "application.sqlite3")
-            for folder in ("originals", "artifacts", "runs", "cache", "exports"):
-                base = rt.data_root / folder
-                if base.is_dir():
-                    for path in base.rglob("*"):
-                        if path.is_file() and not path.is_symlink():
-                            archive.write(path, path.relative_to(rt.data_root).as_posix())
-        return FileResponse(
-            archive_path,
-            media_type="application/zip",
-            filename="anki-generator-backup.zip",
-            background=BackgroundTask(temporary.cleanup),
-        )
 
     for router in (
         courses.router,
         documents.router,
         cards.router,
+        card_tools.router,
         runs.router,
         settings.router,
         exports.router,
+        evaluations.router,
+        source_fidelity.router,
+        quality_inventory.router,
+        backups.router,
+        tasks.router,
     ):
         app.include_router(router)
+
+    if desktop_token is not None:
+        from anki_generator.desktop.diagnostics import create_router
+
+        app.include_router(
+            create_router(desktop_state_directory, shutdown_timeout=desktop_shutdown_timeout)
+        )
 
     frontend = frontend_directory
     if frontend is None:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from sqlalchemy import select
@@ -12,6 +11,7 @@ from anki_generator.database.entities import (
     Concept,
     Revision,
     Run,
+    Stage,
 )
 from anki_generator.processing.contracts import (
     PROMPT_VERSION,
@@ -39,21 +39,22 @@ class AuditStages:
                 )
             ]
         self._stage("deduplication", total=len(cards))
+        from anki_generator.services.semantic import SemanticIndex
+
+        vectors = self._vectors(cards, "card") if cards else {}
+        index = SemanticIndex(vectors)
+        by_id = {card["id"]: card for card in cards}
         accepted: list[dict[str, Any]] = []
+        candidate_pairs = 0
         for card in cards:
-            tokens = set(re.findall(r"\w+", (card["question"] + " " + card["answer"]).casefold()))
-            retrieved = []
-            for other in accepted:
-                other_tokens = set(
-                    re.findall(r"\w+", (other["question"] + " " + other["answer"]).casefold())
-                )
-                score = len(tokens & other_tokens) / max(len(tokens | other_tokens), 1)
-                if card["concept_id"] == other["concept_id"] or score >= 0.18:
-                    retrieved.append(
-                        (score + int(card["concept_id"] == other["concept_id"]), other)
-                    )
-            retrieved.sort(key=lambda item: item[0], reverse=True)
-            candidates = [item[1] for item in retrieved[:8]]
+            nearest = index.search(
+                vectors[card["id"]],
+                limit=self.options.semantic_candidates,
+                exclude={card["id"]},
+                allowed={item["id"] for item in accepted},
+            )
+            candidates = [by_id[identifier] for identifier, score in nearest if score >= 0.2]
+            candidate_pairs += len(candidates)
             if not candidates:
                 accepted.append(card)
                 self._progress("deduplication", card["id"], "no_candidate_pairs")
@@ -61,7 +62,27 @@ class AuditStages:
             decision = self._call(
                 "deduplication",
                 card["id"],
-                {"candidate": card, "retrieved_cards": candidates},
+                {
+                    "candidate": {
+                        key: card[key]
+                        for key in ("id", "question", "answer", "card_type", "concept_id", "kind")
+                    },
+                    "retrieved_cards": [
+                        {
+                            key: c[key]
+                            for key in (
+                                "id",
+                                "question",
+                                "answer",
+                                "card_type",
+                                "concept_id",
+                                "kind",
+                            )
+                        }
+                        for c in candidates
+                    ],
+                    "retrieval": "neural_embeddings_cosine_candidates_not_equivalence",
+                },
                 DuplicateDecision,
             )
             valid_duplicate = decision.duplicate and decision.redundant_with in {
@@ -100,12 +121,28 @@ class AuditStages:
                     session.commit()
             else:
                 accepted.append(card)
+        with self.sessions() as session:
+            run = session.get(Run, self.run_id)
+            run.metrics = {
+                **run.metrics,
+                "semantic_dedup": {
+                    "vectors": len(vectors),
+                    "candidate_pairs": candidate_pairs,
+                    "confirmed_duplicates": sum(
+                        c.verification_status == "duplicate"
+                        for c in session.scalars(
+                            select(Card).where(Card.course_id == self.course_id)
+                        )
+                    ),
+                    "representation": "neural_embeddings",
+                    "verifier": "independent_llm_comparison",
+                },
+            }
+            session.commit()
         self._stage("deduplication", complete=True)
 
     def _coverage(self, *, generate_missing: bool) -> None:
-        rounds = (
-            min(max(int(self.config.get("coverage_rounds", 1)), 0), 3) if generate_missing else 0
-        )
+        rounds = self.options.coverage_rounds if generate_missing else 0
         eligible = self._eligible_concepts()
         by_key = {c["metadata_json"].get("canonical_key", c["id"]): c for c in eligible}
         for round_number in range(rounds + 1):
@@ -136,33 +173,78 @@ class AuditStages:
                         )
                     )
             covered_ids = {concept_id for ids in mappings.values() for concept_id in ids}
-            result = self._call(
-                "coverage",
-                f"course:round-{round_number}",
-                {
-                    "inventory": [{**c, "key": key} for key, c in by_key.items()],
-                    "accepted_cards": accepted,
-                    "explicit_card_concept_mappings": mappings,
-                    "source_roles": [
-                        {
-                            "document_id": d["id"],
-                            "role": d["category"],
-                            "filename": d["filename"],
-                            "extraction_status": d["extraction"]["status"],
-                        }
-                        for d in self.documents
-                    ],
-                    "criteria": self.config.get("criteria", {}),
-                    "deterministic_uncovered_keys": [
-                        key for key, c in by_key.items() if c["id"] not in covered_ids
-                    ],
-                },
-                CoverageReview,
+            from anki_generator.services.context_budget import bounded_batches
+
+            units = []
+            for key, concept in by_key.items():
+                mapped_cards = [card for card in accepted if concept["id"] in mappings[card["id"]]]
+                units.append(
+                    {
+                        "key": key,
+                        "id": concept["id"],
+                        "title": concept["title"],
+                        "kind": concept["kind"],
+                        "statement": concept["description"],
+                        "assumptions": concept["metadata_json"].get("assumptions", []),
+                        "exercise_analysis": concept["exercise_analysis"][:4],
+                        "mapped_cards_total": len(mapped_cards),
+                        "card_selection": "bounded_mapped_representatives",
+                        "cards": [
+                            {
+                                field: card[field]
+                                for field in ("id", "question", "answer", "kind", "concept_id")
+                            }
+                            for card in mapped_cards[: self.options.semantic_candidates]
+                        ],
+                    }
+                )
+            results = []
+            batches = bounded_batches(
+                units,
+                max_bytes=self.options.input_token_budget // 2,
+                max_items=self.options.coverage_batch_size,
             )
+            self._stage("coverage", total=len(batches))
+            for batch_index, batch in enumerate(batches):
+                concept_ids = {unit["id"] for unit in batch}
+                results.append(
+                    self._call(
+                        "coverage",
+                        f"course:round-{round_number}:batch-{batch_index}",
+                        {
+                            "inventory": [
+                                {key: value for key, value in unit.items() if key != "cards"}
+                                for unit in batch
+                            ],
+                            "accepted_cards": [card for unit in batch for card in unit["cards"]],
+                            "explicit_card_concept_mappings": {
+                                cid: ids for cid, ids in mappings.items() if concept_ids & set(ids)
+                            },
+                            "criteria": self.config.get("criteria", {}),
+                            "deterministic_uncovered_keys": [
+                                key
+                                for key, c in by_key.items()
+                                if c["id"] in concept_ids and c["id"] not in covered_ids
+                            ],
+                        },
+                        CoverageReview,
+                    )
+                )
+            result = CoverageReview(
+                gaps=[gap for r in results for gap in r.gaps],
+                overrepresented=[v for r in results for v in r.overrepresented],
+                neglected_sources=[v for r in results for v in r.neglected_sources],
+                warnings=[v for r in results for v in r.warnings],
+            )
+            source_gaps = self._audit_source_targets(accepted)
             gaps = {gap.concept_key: gap for gap in result.gaps if gap.concept_key in by_key}
             missing_keys = {key for key, c in by_key.items() if c["id"] not in covered_ids} | set(
                 gaps
             )
+            source_gap_ids = {cid for target in source_gaps for cid in target["mapped_concept_ids"]}
+            missing_keys |= {
+                key for key, concept in by_key.items() if concept["id"] in source_gap_ids
+            }
             for warning in result.warnings + result.neglected_sources:
                 self._warning(warning)
             with self.sessions() as session:
@@ -171,7 +253,7 @@ class AuditStages:
                     stored.coverage_status = (
                         "uncovered"
                         if stored.id not in covered_ids
-                        else ("partial" if key in gaps else "covered")
+                        else ("partial" if key in missing_keys else "covered")
                     )
                     if key in gaps:
                         stored.metadata_json = {
@@ -203,7 +285,13 @@ class AuditStages:
                     ],
                     "unresolved_sources": unresolved_sources,
                     "overrepresented": result.overrepresented,
-                    "coverage_complete": not missing_keys and unresolved_sources == 0,
+                    "coverage_complete": not missing_keys
+                    and unresolved_sources == 0
+                    and run.metrics.get("independent_inspection", {}).get("unresolved_findings", 0)
+                    == 0
+                    and self.options.source_audit
+                    and bool(run.metrics.get("source_coverage", {}).get("targets_total"))
+                    and run.metrics.get("source_coverage", {}).get("unresolved", 1) == 0,
                 }
                 session.commit()
             self._stage("coverage", complete=True)
@@ -221,6 +309,24 @@ class AuditStages:
                 key = target["metadata_json"].get("canonical_key", target["id"])
                 if key in gaps:
                     target["coverage_feedback"] = gaps[key].model_dump(mode="json")
+                independent = [
+                    gap for gap in source_gaps if target["id"] in gap["mapped_concept_ids"]
+                ]
+                if independent:
+                    target["coverage_feedback"] = {
+                        "inventory_feedback": target.get("coverage_feedback"),
+                        "source_competency_gaps": [
+                            {
+                                "title": gap["title"],
+                                "kind": gap["kind"],
+                                "competency": gap["metadata_json"].get("competency"),
+                                "missing_aspects": gap["metadata_json"].get("missing_aspects"),
+                                "reason": gap["metadata_json"].get("assessment_reason"),
+                            }
+                            for gap in independent
+                        ],
+                    }
+            targets.sort(key=lambda concept: -concept["importance"])
             self._generate(targets, gap_round=round_number + 1)
             self._deduplicate()
 
@@ -236,8 +342,26 @@ class AuditStages:
                 status: sum(card.verification_status == status for card in cards)
                 for status in {card.verification_status for card in cards}
             }
+            from datetime import datetime
+
+            wall_times = {
+                stage.name: max(
+                    0,
+                    (
+                        datetime.fromisoformat(stage.finished_at)
+                        - datetime.fromisoformat(stage.started_at)
+                    ).total_seconds(),
+                )
+                for stage in session.scalars(select(Stage).where(Stage.run_id == self.run_id))
+                if stage.started_at and stage.finished_at
+            }
             run.metrics = {
                 **run.metrics,
+                "stage_wall_seconds": wall_times,
+                "stage_timing_basis": (
+                    "Wall windows may overlap; stage_seconds sums measured "
+                    "API-unit elapsed time including queue waits."
+                ),
                 "cards_total": len(cards),
                 "verification_counts": counts,
                 "human_approved": sum(c.review_status == "approved" for c in cards),
@@ -256,4 +380,22 @@ class AuditStages:
                 "cards": len(cards),
                 "verified": counts.get("verified", 0),
             }
+            if run.progress.get("task_counter_version"):
+                by_id = {card.id: card for card in cards}
+                markers = {
+                    key: value
+                    for key, value in run.checkpoints.items()
+                    if key.startswith("task-card:")
+                }
+                run.progress = {
+                    **run.progress,
+                    "cards_verified": sum(
+                        bool(
+                            by_id.get(key.removeprefix("task-card:"))
+                            and by_id[key.removeprefix("task-card:")].verification_status
+                            == "verified"
+                        )
+                        for key in markers
+                    ),
+                }
             session.commit()

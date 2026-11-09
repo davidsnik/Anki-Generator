@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "label_origin": "author_created_synthetic_reference_not_independent_human_judgments",
+  "cases": [
+    {"id":"compactness-paraphrase","left":"State the open-cover definition of compactness.","left_answer":"Every open cover has a finite subcover.","right":"What finite selection property must every open covering of a compact space satisfy?","right_answer":"Some finite subcollection still covers the entire space.","duplicate":true,"category":"low_lexical_overlap"},
+    {"id":"conditional-direction","left":"Define P(A given B), assuming P(B)>0.","left_answer":"P(A intersection B)/P(B)","right":"Define P(B given A), assuming P(A)>0.","right_answer":"P(A intersection B)/P(A)","duplicate":false,"category":"direction_and_assumptions"},
+    {"id":"uniform-vs-pointwise","left":"State uniform convergence of f_n to f.","left_answer":"For every epsilon>0 there exists N such that for all n>=N and every x, |f_n(x)-f(x)|<epsilon.","right":"State pointwise convergence of f_n to f.","right_answer":"For every x and every epsilon>0 there exists N depending on x such that for all n>=N, |f_n(x)-f(x)|<epsilon.","duplicate":false,"category":"quantifier_order"},
+    {"id":"hypothesis-vs-result","left":"What continuity hypothesis does the intermediate value theorem require?","left_answer":"Continuity on the closed interval [a,b].","right":"What conclusion does the intermediate value theorem give?","right_answer":"Every value between f(a) and f(b) is attained on [a,b].","duplicate":false,"category":"assumption_vs_conclusion"},
+    {"id":"technique-vs-fact","left":"How do you compute a determinant by row reduction?","left_answer":"Track row-swap signs and row-scaling factors, reduce to triangular form, and multiply the diagonal entries.","right":"What is the determinant of an upper triangular matrix?","right_answer":"The product of its diagonal entries.","duplicate":false,"category":"procedure_vs_theorem"},
+    {"id":"bayes-paraphrase","left":"Express the posterior probability using likelihood, prior and evidence.","left_answer":"P(H|E)=P(E|H)P(H)/P(E), for P(E)>0.","right":"State Bayes' rule for a hypothesis H after observing E.","right_answer":"P(H given E)=P(E given H) times P(H), divided by P(E), assuming positive P(E).","duplicate":true,"category":"notation_change"}
+  ]
+}

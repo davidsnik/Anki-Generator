@@ -1,5 +1,6 @@
 export type Json = Record<string, unknown>;
 export interface Course {
+  active_task?: { id: string; status: string; current_stage?: string; mode?: string } | null;
   id: string;
   name: string;
   description: string;
@@ -137,6 +138,9 @@ export interface Stage {
   finished_at?: string;
 }
 export interface Run {
+  elapsed_seconds?: number;
+  elapsed_basis?: string;
+  allowed_actions?: string[];
   id: string;
   course_id: string;
   status: string;

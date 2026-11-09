@@ -76,6 +76,8 @@ test('a local learner can create a course, import role-aware sources, generate, 
   );
   await page.getByRole('button', { name: 'Start processing', exact: true }).click();
   const generatedRun = await (await startedResponse).json();
+  await expect(page).toHaveURL(`${courseUrl}/documents`);
+  await page.getByRole('link', { name: 'Processing', exact: true }).click();
   await expect
     .poll(
       async () => {
@@ -131,7 +133,7 @@ test('a local learner can create a course, import role-aware sources, generate, 
   await page.getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(page.locator('.toast[role=status]')).toContainText('review decision');
   await page.getByRole('button', { name: 'Compare previous revisions' }).click();
-  await expect(page.locator('.revision-list article').first()).toBeVisible();
+  await expect(page.locator('.revision-comparison .revision-field').first()).toBeVisible();
   await page.locator('.source-chips button').first().click();
   await expect(page.locator('.source-highlight').first()).toBeVisible();
   await page.getByRole('dialog').evaluate((dialog) => {

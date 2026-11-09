@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -27,7 +27,6 @@ import {
   Badge,
   Empty,
   ErrorPanel,
-  formatDate,
   human,
   Loading,
   Modal,
@@ -39,6 +38,15 @@ import {
 import { MathText } from '../components/MathText';
 import { SourcePreview } from './Documents';
 import { RunDialog } from './Processing';
+import { Pagination } from '../features/Pagination';
+import type { PageResult } from '../features/Pagination';
+import {
+  BulkReview,
+  RevisionComparison,
+  ShortcutHelp,
+  useReviewKeys,
+  VerificationFindings,
+} from '../features/CardReview';
 export function getSources(card: Card) {
   return card.sources || card.evidence || card.source_references || [];
 }
@@ -120,50 +128,90 @@ export function Flashcard({
 export function CardsPage({ course }: { course: Course }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
+  const [verification, setVerification] = useState('all');
+  const [offset, setOffset] = useState(0);
+  const [query, setQuery] = useState('');
+  const [selection, setSelection] = useState<Map<string, number>>(new Map());
+  const [navigation, setNavigation] = useState<{ edge: 'first' | 'last'; offset: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(search), 200);
+    return () => clearTimeout(timer);
+  }, [search]);
   const [type, setType] = useState('all');
   const [topic, setTopic] = useState('all');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [sort, setSort] = useState('newest');
+  useEffect(() => setOffset(0), [query, status, verification, type, topic, sourceFilter, sort]);
   const [view, setView] = useState('grid');
   const [selected, setSelected] = useState<Card | null>(null);
   const [editing, setEditing] = useState<Card | 'new' | null>(null);
   const [flipped, setFlipped] = useState<Set<string>>(new Set());
+  const parameters = new URLSearchParams({
+    offset: String(offset),
+    limit: '24',
+    q: query,
+    sort,
+    ...(status === 'all' ? {} : { review_status: status }),
+    ...(verification === 'all' ? {} : { verification_status: verification }),
+    ...(type === 'all' ? {} : { card_type: type }),
+    ...(topic === 'all' ? {} : { concept_id: topic }),
+    ...(sourceFilter === 'all' ? {} : { document_id: sourceFilter }),
+  });
   const cards = useQuery({
-    queryKey: ['cards', course.id],
-    queryFn: async () => list<Card>(await api(`/courses/${course.id}/cards`)),
+    queryKey: ['cards-page', course.id, parameters.toString()],
+    queryFn: () => api<PageResult<Card>>(`/courses/${course.id}/cards-page?${parameters}`),
     refetchInterval: 5000,
   });
   const concepts = useQuery({
     queryKey: ['concepts', course.id],
     queryFn: async () => list<Concept>(await api(`/courses/${course.id}/concepts`)),
   });
-  const filtered = useMemo(() => {
-    return (cards.data || [])
-      .filter(
-        (c) =>
-          `${c.question} ${c.answer} ${c.tags?.join(' ')}`
-            .toLowerCase()
-            .includes(search.toLowerCase()) &&
-          (status === 'all' || c.review_status === status) &&
-          (type === 'all' || c.card_type === type) &&
-          (topic === 'all' || c.concept_id === topic || c.concept_ids?.includes(topic)) &&
-          (sourceFilter === 'all' || getSources(c).some((s) => s.document_id === sourceFilter)),
-      )
-      .sort((a, b) =>
-        sort === 'question'
-          ? a.question.localeCompare(b.question)
-          : sort === 'status'
-            ? a.review_status.localeCompare(b.review_status)
-            : (b.created_at || b.id).localeCompare(a.created_at || a.id),
+  const filtered = cards.data?.items || [];
+  useEffect(() => {
+    if (navigation && cards.data?.offset === navigation.offset && cards.data.items.length) {
+      setSelected(
+        navigation.edge === 'first'
+          ? cards.data.items[0]
+          : cards.data.items[cards.data.items.length - 1],
       );
-  }, [cards.data, search, status, type, topic, sourceFilter, sort]);
-  const types = Array.from(new Set(cards.data?.map((c) => c.card_type)));
-  const sources = Array.from(
-    new Map(
-      cards.data
-        ?.flatMap((c) => getSources(c))
-        .map((s) => [s.document_id, s.document_name || s.filename || s.document_id]),
-    ).entries(),
+      setNavigation(null);
+    }
+  }, [navigation, cards.data]);
+  const types = ['basic', 'cloze'];
+  const sources = ((cards.data?.facets?.sources || []) as { id: string; name: string }[]).map(
+    (v) => [v.id, v.name],
+  );
+  function selectCard(card: Card) {
+    setSelection((previous) => {
+      const next = new Map(previous);
+      if (next.has(card.id)) next.delete(card.id);
+      else next.set(card.id, card.revision_number ?? 1);
+      return next;
+    });
+  }
+  function selectVisible() {
+    setSelection((previous) => {
+      const next = new Map(previous);
+      const all = filtered.every((c) => next.has(c.id));
+      for (const card of filtered) {
+        if (all) next.delete(card.id);
+        else next.set(card.id, card.revision_number ?? 1);
+      }
+      return next;
+    });
+  }
+  useReviewKeys(
+    {
+      arrowright: () => {
+        if (filtered[0]) setSelected(filtered[0]);
+      },
+      arrowleft: () => {
+        if (filtered.length) setSelected(filtered[filtered.length - 1]);
+      },
+    },
+    !selected && !editing && view !== 'study',
   );
   const toggle = (id: string) =>
     setFlipped((previous) => {
@@ -259,8 +307,45 @@ export function CardsPage({ course }: { course: Course }) {
           <option value="question">Question A–Z</option>
           <option value="status">Review status</option>
         </select>
-        <span>{filtered.length} cards</span>
+        <select
+          aria-label="Verification outcome"
+          value={verification}
+          onChange={(e) => setVerification(e.target.value)}
+        >
+          <option value="all">All verification outcomes</option>
+          {[
+            'needs_attention',
+            'verified',
+            'unverified',
+            'needs_review',
+            'failed',
+            'rejected',
+            'duplicate',
+          ].map((v) => (
+            <option key={v} value={v}>
+              {human(v)}
+            </option>
+          ))}
+        </select>
+        <span>{cards.data?.total ?? 0} cards</span>
       </div>
+      <div className="inline-actions selection-controls">
+        <button className="button small" disabled={!filtered.length} onClick={selectVisible}>
+          {filtered.length && filtered.every((c) => selection.has(c.id))
+            ? 'Deselect displayed page'
+            : 'Select displayed page'}
+        </button>
+        <span className="field-help">
+          Selection spans only cards you explicitly check, including earlier pages.
+        </span>
+      </div>
+      <ShortcutHelp />
+      <BulkReview
+        courseId={course.id}
+        selection={selection}
+        onClear={() => setSelection(new Map())}
+        concepts={concepts.data || []}
+      />
       {cards.isPending ? (
         <Loading />
       ) : cards.error ? (
@@ -281,7 +366,7 @@ export function CardsPage({ course }: { course: Course }) {
               </button>
             }
           >
-            {cards.data?.length
+            {cards.data?.total
               ? 'Try a different search or review status.'
               : 'Generate a source-supported deck from your documents, or add a card by hand.'}
           </Empty>
@@ -291,26 +376,43 @@ export function CardsPage({ course }: { course: Course }) {
       ) : view === 'list' ? (
         <div className="card-list">
           {filtered.map((card) => (
-            <button key={card.id} onClick={() => setSelected(card)}>
-              <span className="list-card-icon">
-                <Layers size={18} />
-              </span>
-              <div>
-                <MathText text={card.question} cloze={card.card_type === 'cloze'} />
-                <small>{card.tags?.join(' · ') || human(card.card_type)}</small>
-              </div>
-              <Badge tone={statusTone(card.review_status)}>{human(card.review_status)}</Badge>
-              <Badge tone={statusTone(card.verification_status)}>
-                {human(card.verification_status)}
-              </Badge>
-              <ChevronRight size={17} />
-            </button>
+            <div className="card-list-row" key={card.id}>
+              <input
+                aria-label={`Select card ${card.id}`}
+                type="checkbox"
+                checked={selection.has(card.id)}
+                onChange={() => selectCard(card)}
+              />
+              <button onClick={() => setSelected(card)}>
+                <span className="list-card-icon">
+                  <Layers size={18} />
+                </span>
+                <div>
+                  <MathText text={card.question} cloze={card.card_type === 'cloze'} />
+                  <small>{card.tags?.join(' · ') || human(card.card_type)}</small>
+                </div>
+                <Badge tone={statusTone(card.review_status)}>{human(card.review_status)}</Badge>
+                <Badge tone={statusTone(card.verification_status)}>
+                  {human(card.verification_status)}
+                </Badge>
+                <ChevronRight size={17} />
+              </button>
+            </div>
           ))}
         </div>
       ) : (
         <div className="cards-grid">
           {filtered.map((card) => (
             <article className="card-tile" key={card.id}>
+              <label className="card-select">
+                <input
+                  aria-label={`Select card ${card.id}`}
+                  type="checkbox"
+                  checked={selection.has(card.id)}
+                  onChange={() => selectCard(card)}
+                />
+                Select revision {card.revision_number ?? 1}
+              </label>
               <Flashcard
                 card={card}
                 compact
@@ -336,10 +438,37 @@ export function CardsPage({ course }: { course: Course }) {
           ))}
         </div>
       )}
+      <Pagination
+        offset={offset}
+        total={cards.data?.total ?? 0}
+        limit={24}
+        loading={cards.isFetching}
+        onChange={setOffset}
+      />
       {selected && (
         <CardInspector
           course={course}
+          key={selected.id}
           cardId={selected.id}
+          onPrevious={() => {
+            const i = filtered.findIndex((c) => c.id === selected.id);
+            if (i > 0) setSelected(filtered[i - 1]);
+            else if (offset) {
+              setNavigation({ edge: 'last', offset: Math.max(0, offset - 24) });
+              setOffset(Math.max(0, offset - 24));
+              setSelected(null);
+            }
+          }}
+          onNext={() => {
+            const i = filtered.findIndex((c) => c.id === selected.id);
+            if (i + 1 < filtered.length) setSelected(filtered[i + 1]);
+            else if (offset + 24 < (cards.data?.total || 0)) {
+              setNavigation({ edge: 'first', offset: offset + 24 });
+              setOffset(offset + 24);
+              setSelected(null);
+            }
+          }}
+          onToggleSelection={() => selectCard(selected)}
           initial={selected}
           onClose={() => setSelected(null)}
           onEdit={(card) => {
@@ -363,6 +492,19 @@ function StudyView({ cards, onEdit }: { cards: Card[]; onEdit: (card: Card) => v
   const [flipped, setFlipped] = useState(false);
   const safeIndex = Math.min(index, cards.length - 1);
   const card = cards[safeIndex];
+  useReviewKeys({
+    f: () => setFlipped((v) => !v),
+    ' ': () => setFlipped((v) => !v),
+    arrowleft: () => {
+      setIndex(Math.max(0, safeIndex - 1));
+      setFlipped(false);
+    },
+    arrowright: () => {
+      setIndex(Math.min(cards.length - 1, safeIndex + 1));
+      setFlipped(false);
+    },
+    e: () => onEdit(card),
+  });
   return (
     <section className="study-mode">
       <div className="study-top">
@@ -415,7 +557,13 @@ function CardInspector({
   initial,
   onClose,
   onEdit,
+  onPrevious,
+  onNext,
+  onToggleSelection,
 }: {
+  onPrevious: () => void;
+  onNext: () => void;
+  onToggleSelection: () => void;
   course: Course;
   cardId: string;
   initial: Card;
@@ -451,10 +599,42 @@ function CardInspector({
   });
   const card = detail.data;
   const sources = getSources(card);
+  useReviewKeys(
+    {
+      ' ': () => setFlipped((v) => !v),
+      f: () => setFlipped((v) => !v),
+      arrowleft: onPrevious,
+      arrowright: onNext,
+      x: onToggleSelection,
+      e: () => onEdit(card),
+      g: () => setRegenerate(true),
+      s: () => {
+        if (sources[0]) setSource(sources[0]);
+      },
+      a: () => {
+        if (card.verification_status === 'verified' || reason.trim()) review.mutate('approved');
+      },
+      r: () => review.mutate('rejected'),
+    },
+    !regenerate,
+    true,
+  );
   return (
     <Modal title="A closer look" onClose={onClose} wide>
       <div className={`inspector-layout ${source ? 'has-source' : ''}`}>
         <div className="inspector-card">
+          <div className="inline-actions">
+            <button className="button small" onClick={onPrevious}>
+              ← Previous card
+            </button>
+            <button className="button small" onClick={onNext}>
+              Next card →
+            </button>
+            <button className="button small" onClick={onToggleSelection}>
+              Toggle selection
+            </button>
+          </div>
+          <ShortcutHelp />
           <div className="inspector-badges">
             <Badge tone={statusTone(card.review_status)}>{human(card.review_status)}</Badge>
             <Badge tone={statusTone(card.verification_status)}>
@@ -501,18 +681,12 @@ function CardInspector({
               ))}
             </div>
           )}
-          <details className="verification-details">
-            <summary>Independent verification record</summary>
-            <pre>
-              {JSON.stringify(
-                (card as Card & { verifications?: unknown }).verifications ||
-                  card.verification ||
-                  {},
-                null,
-                2,
-              )}
-            </pre>
-          </details>
+          <VerificationFindings
+            verifications={((card as Card & { verifications?: Json[] }).verifications || []).filter(
+              (v) => v.revision_number === undefined || v.revision_number === card.revision_number,
+            )}
+            issues={card.issues || []}
+          />
           <div className="tag-row">
             {card.tags?.map((tag) => (
               <span className="tag" key={tag}>
@@ -603,28 +777,7 @@ function CardInspector({
             ) : revisions.error ? (
               <ErrorPanel error={revisions.error} />
             ) : (
-              <div className="revision-list">
-                {!revisions.data?.length && <p className="muted">This is the first revision.</p>}
-                {revisions.data?.map((revision, i) => {
-                  const content = revision.content || revision.snapshot || revision;
-                  return (
-                    <article key={revision.id || i}>
-                      <div>
-                        <Badge>
-                          Revision {revision.revision_number ?? revision.revision ?? i + 1}
-                        </Badge>
-                        <small>
-                          {formatDate(revision.created_at)} ·{' '}
-                          {revision.origin || revision.actor || revision.reason || 'Saved revision'}
-                        </small>
-                      </div>
-                      <MathText text={content.question} />
-                      <hr />
-                      <MathText text={content.answer} />
-                    </article>
-                  );
-                })}
-              </div>
+              <RevisionComparison card={card} revisions={revisions.data || []} />
             ))}
         </div>
         {source && (

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Anki Generator
+Comment=Turn university sources into reviewed Anki flashcards
+Exec=/opt/anki-generator/anki-generator %U
+Icon=anki-generator
+Terminal=false
+Categories=Education;
+Keywords=Anki;Flashcards;University;Study;
+StartupWMClass=org.anki_generator.AnkiGenerator
+StartupNotify=true

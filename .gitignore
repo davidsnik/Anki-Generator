@@ -9,6 +9,8 @@ __pycache__/
 .coverage
 htmlcov/
 build/
+!/desktop/build/
+!/desktop/build/**
 dist/
 .uv-cache/
 node_modules/

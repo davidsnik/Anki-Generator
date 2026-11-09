@@ -63,6 +63,27 @@ def extract_office(
 ) -> ExtractionResult:
     validate_office_archive(path, options)
     suffix = path.suffix.lower()[1:]
+    engine_warning = "Native Office rendering disabled by settings"
+    if options.office_rendering == "auto":
+        from anki_generator.ingestion.office_engine import render_office_pdf
+        from anki_generator.ingestion.pdf_extract import extract_pdf
+
+        rendered = media_dir / "office-rendered.pdf"
+        converted, engine_warning = render_office_pdf(path, rendered, options)
+        if converted:
+            result = extract_pdf(rendered, output_dir, media_dir, digest, options)
+            return result.model_copy(
+                update={
+                    "source_type": suffix,
+                    "rendered_source_path": rendered.relative_to(output_dir).as_posix(),
+                    "rendering_engine": engine_warning,
+                    "warnings": [
+                        *result.warnings,
+                        "Office pages rendered by LibreOffice; "
+                        "inspect font substitutions and conversion fidelity",
+                    ],
+                }
+            )
     warning = (
         "Office text and tables parsed locally; original pagination, equations, charts, "
         "and drawing layout require review in the original file. Preview geometry is synthetic."
@@ -80,7 +101,7 @@ def extract_office(
         )
         for page in pages
     ]
-    warnings = [warning]
+    warnings = [warning, engine_warning]
     consumed_pixels = sum(r.pixel_width * r.pixel_height for p in pages for r in p.regions)
     consumed_regions = sum(len(page.regions) for page in pages)
     partial = False

@@ -51,7 +51,10 @@ def provider(*values):
     fake = FakeResponses(*values)
     sleeps = []
     instance = OpenAIProvider(
-        "SECRET-KEY", client=SimpleNamespace(responses=fake), sleep=sleeps.append
+        "SECRET-KEY",
+        client=SimpleNamespace(responses=fake),
+        sleep=sleeps.append,
+        jitter=lambda: 0.5,
     )
     return instance, fake, sleeps
 

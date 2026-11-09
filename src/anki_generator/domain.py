@@ -125,12 +125,47 @@ class ReviewInput(InputModel):
 
 
 class RunInput(InputModel):
+    idempotency_key: str | None = Field(
+        default=None, min_length=8, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$"
+    )
+    document_ids: list[str] | None = Field(default=None, max_length=2000)
+    page_numbers: list[int] | None = Field(default=None, max_length=2000)
+    region_ids: list[str] | None = Field(default=None, max_length=4096)
+    replace_human: bool = False
+    stage: str | None = Field(default=None, max_length=100)
+    retry_stage: str | None = Field(default=None, max_length=100)
+
+    @field_validator("stage", "retry_stage")
+    @classmethod
+    def known_retry_stage(cls, value: str | None) -> str | None:
+        if value is not None and value not in {
+            "extraction",
+            "interpretation",
+            "knowledge",
+            "consolidation",
+            "source_audit",
+            "source_matching",
+            "target_coverage",
+            "embeddings",
+            "identity",
+            "revision",
+            "generation",
+            "factual",
+            "pedagogical",
+            "mathematical",
+            "deduplication",
+            "coverage",
+        }:
+            raise ValueError("Unknown processing stage")
+        return value
+
     consent: bool = False
-    mode: Literal["generate", "extract", "revise", "topic"] = "generate"
+    mode: Literal["generate", "extract", "interpret", "revise", "topic"] = "generate"
     card_id: str | None = None
     topic_id: str | None = None
     instruction: str = Field(default="", max_length=20000)
     overwrite_manual: bool = False
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class ExportInput(InputModel):

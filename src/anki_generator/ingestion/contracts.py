@@ -18,6 +18,8 @@ class ExtractionOptions(BaseModel):
     worker_timeout_seconds: float = Field(default=120, gt=0, le=3600)
     worker_memory_mb: int = Field(default=1024, ge=128)
     worker_cpu_seconds: int = Field(default=60, ge=1)
+    office_rendering: Literal["auto", "native"] = "auto"
+    office_timeout_seconds: int = Field(default=45, ge=1, le=120)
     max_file_bytes: int = Field(default=200 * 1024 * 1024, ge=1)
     max_pages: int = Field(default=2000, ge=1, le=10000)
     max_image_pixels: int = Field(default=40_000_000, ge=1)
@@ -102,7 +104,9 @@ class ExtractedPage(_Contract):
 
 class ExtractionResult(_Contract):
     schema_version: Literal["1"] = "1"
-    extractor_version: Literal["1"] = "1"
+    extractor_version: Literal["1", "2"] = "2"
+    rendered_source_path: str | None = None
+    rendering_engine: str | None = None
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_type: str
     pages: list[ExtractedPage] = Field(default_factory=list)

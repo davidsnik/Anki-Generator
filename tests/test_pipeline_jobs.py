@@ -70,7 +70,11 @@ def setup_course(tmp_path):
         with sessions() as session:
             run = Run(
                 course_id=course_id,
-                config={"max_revisions": 1, "coverage_rounds": 0},
+                config={
+                    "max_revisions": 1,
+                    "coverage_rounds": 0,
+                    "processing": {"concurrency": 1, "api_concurrency": 1},
+                },
                 request={"consent": True},
                 **kwargs,
             )

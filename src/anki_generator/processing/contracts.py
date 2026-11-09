@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-PROMPT_VERSION = "2026-11-08.1"
+PROMPT_VERSION = "2026-11-09.2"
 
 
 class Output(BaseModel):
@@ -98,6 +98,23 @@ class SymbolicCheck(Output):
     variables: list[str]
     assumptions: list[str]
     purpose: str
+    operation: Literal[
+        "identity",
+        "simplify",
+        "differentiate",
+        "integrate",
+        "matrix_multiply",
+        "matrix_shape",
+        "matrix_transpose",
+        "matrix_determinant",
+        "counterexample",
+        "probability",
+        "optimization_stationary",
+    ] = "identity"
+    variable: str | None = None
+    matrix_b: str | None = None
+    bounds: list[str] | None = Field(default=None, min_length=2, max_length=2)
+    domain: Literal["real", "complex"] = "real"
 
 
 class CardCandidate(Output):
@@ -163,3 +180,56 @@ class CoverageReview(Output):
     overrepresented: list[str]
     neglected_sources: list[str]
     warnings: list[str]
+
+
+class SourceLearningTarget(Output):
+    concept: CandidateConcept
+    dimension: Literal[
+        "topic",
+        "subtopic",
+        "conceptual",
+        "definition",
+        "theorem",
+        "assumption",
+        "technique",
+        "exercise_pattern",
+    ]
+    competency: str
+    exercise_pattern: str | None
+
+
+class SourceAuditResult(Output):
+    targets: list[SourceLearningTarget]
+    warnings: list[str]
+    unresolved: list[str]
+
+
+class SourceTargetMatch(Output):
+    target_key: str
+    concept_key: str | None
+    relation: Literal["same", "broader", "narrower", "related", "new", "uncertain"]
+    reason: str
+
+
+class SourceMatchingResult(Output):
+    matches: list[SourceTargetMatch]
+
+
+class TargetCoverageAssessment(Output):
+    target_id: str
+    status: Literal["covered", "partial", "uncovered", "uncertain"]
+    card_ids: list[str]
+    missing_aspects: list[str]
+    reason: str
+
+
+class TargetCoverageResult(Output):
+    assessments: list[TargetCoverageAssessment]
+    warnings: list[str]
+
+
+class IdentityMatchResult(Output):
+    relation: Literal["same", "split", "merge", "different", "uncertain"]
+    existing_id: str | None
+    assumptions_preserved: bool
+    reason: str

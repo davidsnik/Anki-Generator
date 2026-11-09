@@ -1,62 +1,73 @@
-# Roadmap and evaluation
+# Current status and remaining evaluation
 
-## Implemented application
+The six improvement areas, concurrent Tasks and Linux desktop packaging have local
+implementations. That establishes
+capability, not the accuracy of generated cards on unseen university courses.
+See [requirements](requirements.md), [architecture](architecture.md),
+[GUI workflows](gui-workflows.md) and the dated [verification record](verification.md).
 
-The repository now contains the local GUI, persistent course/source/card management,
-bounded multimodal-ready ingestion, course synthesis, generation, independent
-quality stages, durable jobs, source-aware review and real Anki export. The original
-Phase0 discovery feature is retained. See [requirements](requirements.md) and
-[architecture](architecture.md) for scope and [testing](testing.md) for verification.
+## Status on 9 November 2026
 
-Completed work includes:
-- Locked Python/frontend installation and Linux launch/development commands.
-- Source roles/authority/linking, page geometry/visuals, long-page segmentation and
-  local extraction with explicit Office limitations.
-- Typed model outputs, role-aware hierarchical concepts, exercise competencies,
-  independent evidence/quality checks, bounded repair/deduplication/coverage.
-- Durable stages/checkpoints, reuse, pause/cancel/resume/retry and recovery.
-- Card/source inspection, history, decisions, model/key/preferences GUI and export.
+| Area | Implemented | Evidence and remaining qualification |
+| --- | --- | --- |
+| Desktop distribution | Electron shell, bundled one-folder backend/React assets, private dynamic origin/session authentication, XDG persistence, explicit migration, safe lifecycle/native controls and Linux AppImage/RPM build workflows | Release checks are tracked in the dated verification record; build, frozen integration, actual GUI launch and installed Fedora behavior are separate evidence. Other platforms and older Linux compatibility remain unestablished. |
+| Evaluation infrastructure | Versioned portable datasets, source annotations, reference concepts/cards, isolated paired runs, blind judgments, separate label origins, explicit denominators, reports and promotion of actual reviewed examples | Controlled API/browser workflows exercise the machinery. A broad independent human reference corpus and live-model comparison results are still absent. |
+| Document and mathematical fidelity | Immutable originals, effective transcriptions, append-only corrections/human precedence, coordinate crops/zoom/pan, saved evidence, selected reprocessing, optional isolated Office rendering, bounded calculus/matrix/probability/domain/counterexample checks | Genuine synthetic PDF/raster/Office fixtures and the deliberate OCR-sign regression exercise real parsing/rendering. LibreOffice rendering was inspected. Difficult real handwriting and general theorem correctness remain unvalidated. |
+| Coverage and duplication | Independent original-source target inventory, hierarchy/assumptions/methods/exercise coverage, omitted-target reconciliation, neural embedding candidates and separate semantic decisions | Offline tests use controlled responses/vectors; synthetic semantic references distinguish paraphrases from changed assumptions. Live retrieval recall, semantic precision and independently rated course coverage remain research. |
+| Performance and robustness | Active bounded workers/API concurrency, conservative context limits, source/image/embedding batches, durable caches/checkpoints, targeted retries, SQL paging/search and bounded detail responses | Measured real local engineering profiles cover 3–200 documents, visual PDFs, recovery and 1k/10k card stores. Provider latency/usage and vectors were simulated; diverse full-course quality/cost is not established. |
+| Concurrent generation and Tasks | Independent course pipelines, persistent priority/FIFO queue with aging, global API/local limits, frozen inputs, duplicate-submission protection, isolated controls/recovery, paged task history and live indicators | Real scheduler/provider barriers and browser workflows prove two courses overlap while a third queues, and completed cards can be reviewed/exported independently. Live provider throughput and account limits remain unmeasured. |
+| Persistent identity and Anki updates | Aliases, source/neural reconciliation, explicit new/match/split/merge decisions, human-edit protection, immutable export snapshots, preview categories and stable content timestamps | Eleven actual Anki 26.09.4 core cases passed in disposable Linux collections. Other versions, desktop/mobile rendering, changed note-type schemas and cloze restructuring remain untested. |
+| Review and data workflows | Server-paged filters/search, explicit bulk revisions, shortcuts, readable findings, source correction/crops, complete field diffs/restore, staged GUI backup validation/recovery/restore | Controlled API/browser checks include 1,500-card browsing, page-boundary navigation and archive round trips. The dated verification record contains the executed totals and limits. |
+
+The deterministic `inspect` CLI, browser development, locked installation, local FastAPI/React runtime,
+course/source management, human approval gate and genuine APKG export remain in
+place. The status above does not replace the exact executed-check log.
 
 ## Next priorities
 
-1. **Manually reviewed quality corpus.** Expand synthetic fixtures into a legally
-   redistributable set across probability, analysis, programming and circuits.
-   Have domain reviewers annotate learning targets, source regions, difficult
-   notation, accepted cards and deliberate defects. Keep a held-out split. Define
-   factual accuracy, target coverage, ambiguity, redundancy and human-acceptance
-   denominators and publish reviewer agreement. Controlled tests do not replace this.
-   Deliverable: versioned annotated corpus and scoring report. Acceptance: each
-   subject has reviewed sources/cards, a held-out split and reproducible metrics.
-2. **Live-provider evaluation.** Run explicit opt-in small course evaluations with
-   configured keys; compare stage models/reasoning/visual approaches. Record versions,
-   source evidence, defects and usage. Acceptance: measured accuracy and known limits,
-   not a model's self-reported confidence.
-   Deliverable: reproducible opt-in evaluation command and dated comparison report.
-3. **Real Anki compatibility matrix.** Import edited/repeated packages into disposable
-   collections across supported Anki versions and update settings. Check review
-   history, cloze changes, media and manual Anki edits; document exact tested settings.
-   Deliverable: version/settings matrix with repeatable import cases. Acceptance:
-   stable-note updates and any scheduling/manual-edit effects are recorded per case.
-4. **Document fidelity.** Expand difficult handwriting and dense-math fixtures, model
-   disagreements and Office-native conversion options. Add another parser only when
-   reviewed failures justify it; preserve original-region inspection.
-   Deliverable: difficult-format regression corpus and parser comparison. Acceptance:
-   every added fixture retains source coordinates and flags omitted/uncertain content;
-   improvements are measured against human transcriptions and existing regressions.
-5. **Large-course reliability/performance.** Measure representative courses, improve
-   concept reconciliation and bounded synthesis, add targeted retrieval where needed,
-   and harden crash boundaries/provider idempotence. Preserve quality gates and reuse.
-   Deliverable: reproducible scale benchmark and crash-injection scenarios. Acceptance:
-   documented memory/time/call counts, resumable checkpoints, no lost human edits and
-   no repeated expensive work for unchanged completed stages.
-6. **Review ergonomics.** Add evaluated shortcuts/bulk review and optional true image
-   occlusion only with tested masks/media/templates; never label ordinary image cards
-   as occlusion. Direct Anki integration remains optional and requires explicit consent.
-   Deliverable: tested keyboard/bulk-review flows and a separately scoped occlusion
-   design if pursued. Acceptance: decisions apply to the intended card revisions,
-   remain auditable and undoable, and any occlusion package passes real mask/media
-   and disposable-collection import tests.
+1. **Independent quality evidence.** Curate legally redistributable probability,
+   analysis, programming, optimization and circuits sources. Domain reviewers should
+   annotate learning targets, assumptions, source regions, difficult notation,
+   accepted examples and deliberate defects. Separate development and held-out
+   datasets, record disagreement and distinguish provenance/independence. Acceptance:
+   versioned multi-subject references and reproducible per-dimension reports with
+   meaningful denominators, including unreviewed cases.
+2. **Opt-in live comparisons.** Execute small paired configurations with an explicitly
+   configured key and consent. Compare models, prompts, reasoning, extraction and
+   verification strategies using the same frozen sources and independent labels.
+   Acceptance: dated accuracy/coverage/redundancy/acceptance, actual usage and latency
+   reports, failed examples and uncertainty; no reliance on model confidence alone.
+3. **Broader Anki compatibility.** Extend the existing real-core cases across Anki
+   versions, desktop/mobile importers, note-type/cloze changes and unusual deck
+   settings. Inspect visual mathematics/media in disposable desktop profiles.
+   Acceptance: an explicit version/settings matrix, including manual Anki edits,
+   scheduling/history effects and known conflicts. No private collection is needed.
+4. **Document fidelity research.** Expand genuine handwriting, reMarkable exports,
+   dense proofs, notation disagreements, rotated/tall pages and complex Office
+   equations/charts. Compare extraction and rendering against independent
+   transcriptions. Acceptance: measured errors and retained source geometry;
+   improvements must preserve existing correction/history regressions.
+5. **Representative scale and recovery.** Extend the measured synthetic engineering
+   profiles with diverse courses containing many distinct targets and thousands of
+   resulting cards. Measure live provider/context behavior separately from local
+   SQL/rendering work. Profile linear retrieval and collection-wide export preview
+   classification before adding a more complex index. Acceptance: reproducible
+   timings, memory, request/cache counts, fault recovery and no lost human work.
+6. **Optional product/platform work.** Evaluate true image occlusion with tested
+   masks, templates/media and real disposable imports; ordinary image cards are not
+   occlusion. AnkiConnect/synchronization, direct study scheduling, native mobile
+   apps, Windows/macOS installers and hosted multi-user access require separate
+   designs and explicit scope. Bulk/keyboard review and GUI restore already exist;
+   additional review ergonomics should follow observed user needs.
 
-Each new stage/contract/identity change must include relevant tests, migration or
-prompt version changes, measured behavior and accurate documentation. Critical
-unresolved mathematics or missing evidence always blocks automatic verification.
+Desktop maintenance must preserve the existing pipeline and appearance. Keep
+Electron/PyInstaller and lockfiles current, test copied artifacts with frozen
+parser/symbolic children, validate explicit data migration and checkpoint shutdown,
+and inspect KDE window/dialog/tray behavior. Broader Linux bases and Windows/macOS
+need their own build/runtime/security validation, not just new package targets.
+See the [desktop guide](desktop.md).
+
+Every schema, prompt, identity or pipeline change needs appropriate versioning,
+migrations and failure-path tests. Human revisions remain protected. Unresolved
+mathematics, source ambiguity, identity conflicts and missing evidence must remain
+visible; no revision limit or throughput result establishes correctness.

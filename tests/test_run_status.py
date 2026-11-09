@@ -42,14 +42,25 @@ def test_queued_run_exposes_mode_specific_pending_plan_without_writing_rows(sess
     if mode == "extract":
         assert names == ["extraction"]
     else:
-        assert names[-2:] == ["deduplication", "coverage"]
+        expected_tail = ["deduplication", "coverage"]
+        if mode != "revise":
+            expected_tail.append("target_coverage")
+        assert names[-len(expected_tail) :] == expected_tail
         assert "mathematical" in names and "symbolic" not in names
         assert {"interpretation", "factual", "pedagogical"} <= set(names)
         if mode == "revise":
             assert names[2] == "revision"
             assert not {"knowledge", "consolidation", "generation"} & set(names)
         else:
-            assert names[2:5] == ["knowledge", "consolidation", "generation"]
+            assert names[2:9] == [
+                "knowledge",
+                "consolidation",
+                "source_audit",
+                "source_matching",
+                "embeddings",
+                "identity",
+                "generation",
+            ]
             assert (
                 "Only for actionable defects"
                 in next(s for s in stages if s["name"] == "revision")["message"]

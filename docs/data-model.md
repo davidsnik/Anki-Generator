@@ -52,3 +52,30 @@ originals, page artifacts, response caches/checkpoints and exports. Keys are exc
 Backups contain private course data. Stop the app, back up the current directory,
 then unpack a backup into an empty selected data directory before restarting.
 Do not run two backend instances against one directory.
+
+## Source coverage, semantic retrieval and export identity (migration 0004)
+
+`SemanticVector` stores versioned neural vectors keyed by course/object/hash/model/
+dimensions. `IdentityAlias` retains accepted semantic-key mappings;
+`IdentityProposal` retains ambiguous candidates, prior alternatives and explicit
+human resolution history. `SourceCoverageTarget` stores the independent original-
+source inventory, hierarchy, exact provenance, competency dimension, explicit
+concept/card mappings and assessment origin/status for each run. `ExportSnapshot`
+retains per-card GUID, revision, content hash and export content; APKG snapshots
+also retain stable note modification times. These are additive tables, not changes
+to existing note GUIDs. Migration 0004 follows `0003_source_fidelity`; human source
+replacement origin is added by migration 0005.
+
+## Concurrent tasks (migration 0006)
+
+Run records add priority, queue-entry time, submission key, active processing clock
+and recovery count. Unique indexes prevent duplicate idempotency keys per course
+and simultaneous executing jobs for one course. Additive ALTERs preserve existing
+verification-to-run foreign keys. JobEvent stores append-only state/stage/resource
+diagnostics with paged access and cascading ownership by run. Original run source
+and configuration snapshots remain the reproducibility boundary.
+
+New runs version their per-task output counters in progress. Idempotent per-card
+checkpoint markers distinguish generated, reused, new and verified cards without
+counting retries twice. These historical counters remain separate from current
+course totals; legacy runs without recorded counters expose unknown values.

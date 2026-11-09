@@ -28,6 +28,15 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     }
     throw new ApiError(message, response.status);
   }
+  if (
+    options.method &&
+    !['GET', 'HEAD'].includes(options.method) &&
+    (path.startsWith('/runs/') ||
+      path.startsWith('/tasks/') ||
+      /\/courses\/[^/]+\/runs/.test(path) ||
+      path === '/settings')
+  )
+    window.dispatchEvent(new Event('anki-task-change'));
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
@@ -80,6 +89,9 @@ export function list<T>(value: unknown): T[] {
   if (value && typeof value === 'object') {
     for (const key of [
       'items',
+      'datasets',
+      'experiments',
+      'cases',
       'documents',
       'cards',
       'concepts',

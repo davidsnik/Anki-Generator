@@ -3,7 +3,7 @@
 import math
 from typing import Any
 
-from sqlalchemy import func, inspect, select
+from sqlalchemy import case, func, inspect, select
 from sqlalchemy.orm import Session
 
 from anki_generator.database.entities import (
@@ -39,21 +39,42 @@ def course_view(session: Session, course: Course) -> dict[str, Any]:
     documents = session.scalar(
         select(func.count()).select_from(Document).where(Document.course_id == course.id)
     )
-    cards = session.scalars(select(Card).where(Card.course_id == course.id, ~Card.archived)).all()
+    counts = session.execute(
+        select(
+            func.count(Card.id),
+            func.sum(case((Card.review_status == "pending", 1), else_=0)),
+            func.sum(case((Card.review_status == "approved", 1), else_=0)),
+            func.sum(case((Card.verification_status == "verified", 1), else_=0)),
+        ).where(Card.course_id == course.id, ~Card.archived)
+    ).one()
     last_run = session.scalar(
         select(Run).where(Run.course_id == course.id).order_by(Run.created_at.desc()).limit(1)
     )
     result["stats"] = {
         "documents": documents,
-        "cards": len(cards),
-        "pending_review": sum(card.review_status == "pending" for card in cards),
-        "approved": sum(card.review_status == "approved" for card in cards),
-        "verified": sum(card.verification_status == "verified" for card in cards),
+        "cards": counts[0],
+        "pending_review": counts[1] or 0,
+        "approved": counts[2] or 0,
+        "verified": counts[3] or 0,
         "concepts": session.scalar(
             select(func.count()).select_from(Concept).where(Concept.course_id == course.id)
         ),
         "last_status": last_run.status if last_run else "not_started",
     }
+    active = session.execute(
+        select(Run.id, Run.status, Run.current_stage)
+        .where(
+            Run.course_id == course.id,
+            Run.status.in_(["queued", "running", "pausing", "cancelling", "recovering"]),
+        )
+        .order_by(Run.priority.desc(), Run.created_at, Run.id)
+        .limit(1)
+    ).first()
+    result["active_task"] = (
+        {"id": active.id, "status": active.status, "current_stage": active.current_stage}
+        if active
+        else None
+    )
     return result
 
 
@@ -150,6 +171,10 @@ def run_view(session: Session, run: Run) -> dict[str, Any]:
     # Retain real stages introduced by another application version or extension.
     stages.extend(recorded.values())
     result["stages"] = stages
+    from anki_generator.services.task_views import actions, elapsed
+
+    result["allowed_actions"] = actions(run)
+    result["elapsed_seconds"] = elapsed(run)
     return result
 
 
@@ -170,6 +195,8 @@ def _run_stage_plan(mode: str) -> list[tuple[str, str | None]]:
     )
     if mode == "extract":
         return [("extraction", None)]
+    if mode == "interpret":
+        return [("extraction", None), ("interpretation", None)]
     if mode == "revise":
         return [
             ("extraction", None),
@@ -186,6 +213,10 @@ def _run_stage_plan(mode: str) -> list[tuple[str, str | None]]:
         interpretation,
         ("knowledge", None),
         ("consolidation", None),
+        ("source_audit", "Independent original-source inspection when enabled."),
+        ("source_matching", "When the independent audit identifies source learning targets."),
+        ("embeddings", "When neural semantic retrieval needs uncached representations."),
+        ("identity", "When changed semantic targets need identity reconciliation."),
         ("generation", None),
         factual,
         pedagogical,
@@ -193,6 +224,10 @@ def _run_stage_plan(mode: str) -> list[tuple[str, str | None]]:
         revision,
         ("deduplication", None),
         ("coverage", None),
+        (
+            "target_coverage",
+            "When the independent original-source audit identified learning targets.",
+        ),
     ]
 
 
@@ -223,7 +258,13 @@ def validate_sources(
         if page is None:
             raise ValueError("Source page is not extracted; run local extraction first")
         region_id = ref.get("region_id")
-        region = next((item for item in page.regions if item["id"] == region_id), None)
+        from anki_generator.services.source_corrections import resolve_source_region
+
+        region = (
+            resolve_source_region(session, document.id, page.page_number, region_id, page.regions)
+            if region_id
+            else None
+        )
         if (region_id or require_region) and region is None:
             raise ValueError("Source image region does not exist on that page")
         bbox = ref.get("bbox")

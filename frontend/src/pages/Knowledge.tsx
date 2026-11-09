@@ -9,7 +9,7 @@ import {
   Plus,
   SearchCheck,
 } from 'lucide-react';
-import type { Card, Concept, Course, Source } from '../services/types';
+import type { Concept, Course, Source } from '../services/types';
 import { api, list, write } from '../services/api';
 import {
   Badge,
@@ -22,6 +22,7 @@ import {
   statusTone,
   useToast,
 } from '../components/UI';
+import { CoverageAudit } from '../features/CoverageAudit';
 import { MathText } from '../components/MathText';
 import { RunDialog } from './Processing';
 import { SourcePreview } from './Documents';
@@ -34,17 +35,8 @@ export function KnowledgePage({ course }: { course: Course }) {
     queryFn: async () => list<Concept>(await api(`/courses/${course.id}/concepts`)),
     refetchInterval: 5000,
   });
-  const cards = useQuery({
-    queryKey: ['cards', course.id],
-    queryFn: async () => list<Card>(await api(`/courses/${course.id}/cards`)),
-    refetchInterval: 5000,
-  });
   const inventory = concepts.data?.map((concept) => ({
     ...concept,
-    card_count:
-      cards.data?.filter(
-        (card) => card.concept_id === concept.id || card.concept_ids?.includes(concept.id),
-      ).length ?? 0,
     assumptions:
       concept.assumptions || (concept.metadata_json?.assumptions as string[] | undefined),
   }));
@@ -113,6 +105,7 @@ export function KnowledgePage({ course }: { course: Course }) {
           ))}
         </section>
       )}
+      <CoverageAudit courseId={course.id} />{' '}
       <div className="inline-note">
         <Network size={18} />
         <span>

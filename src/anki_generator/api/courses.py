@@ -3,10 +3,10 @@
 from typing import Any
 
 from fastapi import APIRouter, Request
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, text
 
 from anki_generator.api.runtime import runtime
-from anki_generator.database.entities import Concept, Course, Document, ExportRecord, Run
+from anki_generator.database.entities import Card, Concept, Course, Document, ExportRecord, Run
 from anki_generator.domain import CourseInput, CoursePatch, InputModel
 from anki_generator.services.cleanup import remove_owned_directory, remove_unreferenced_blob
 from anki_generator.services.records import course_view, record_dict, require, source_view
@@ -47,16 +47,28 @@ def get_course(request: Request, course_id: str) -> dict[str, Any]:
 
 
 def ensure_idle(session: Any, course_id: str) -> None:
-    active = session.scalar(
-        select(Run)
+    active_query = (
+        select(Run.id)
         .where(
             Run.course_id == course_id,
             Run.status.in_(["queued", "running", "pausing", "cancelling"]),
         )
         .limit(1)
     )
-    if active:
-        raise ValueError("Pause or cancel the active processing run before modifying course inputs")
+    message = "Pause or cancel the active processing run before modifying course inputs"
+    # Reject known active work without waiting behind its completion transaction.
+    if session.scalar(active_query):
+        raise ValueError(message)
+    # Hold SQLite's writer until the caller commits its mutation. A read-only
+    # idle check would allow a submission/claim to validate the old source before
+    # this transaction writes its edit. This also works inside an existing writer
+    # transaction without issuing a nested BEGIN or changing course timestamps.
+    session.execute(
+        text("UPDATE courses SET id = id WHERE id = :course_id"), {"course_id": course_id}
+    )
+    # A submission may have committed after the fast read but before this writer.
+    if session.scalar(active_query):
+        raise ValueError(message)
 
 
 @router.patch("/courses/{course_id}")
@@ -66,8 +78,8 @@ def update_course(request: Request, course_id: str, values: CoursePatch) -> dict
         payload = values.model_dump(exclude_unset=True)
         if any(value is None for value in payload.values()):
             raise ValueError("Course settings cannot be null")
-        if "criteria" in payload:
-            ensure_idle(session, course_id)
+        # Runs hold their own criteria/language/name snapshot. These edits apply
+        # to future submissions; original document edits remain guarded.
         for key, value in payload.items():
             if isinstance(value, str) and key in {"name", "deck_name", "language"}:
                 value = value.strip()
@@ -110,13 +122,21 @@ def delete_course(request: Request, course_id: str) -> dict[str, bool]:
 def list_concepts(request: Request, course_id: str) -> list[dict[str, Any]]:
     with runtime(request).sessions() as session:
         require(session, Course, course_id)
+        counts = (
+            select(Card.concept_id, func.count(Card.id).label("card_count"))
+            .where(Card.course_id == course_id, ~Card.archived)
+            .group_by(Card.concept_id)
+            .subquery()
+        )
         return [
             {
                 **record_dict(concept),
                 "sources": [source_view(session, ref) for ref in concept.sources],
+                "card_count": card_count,
             }
-            for concept in session.scalars(
-                select(Concept)
+            for concept, card_count in session.execute(
+                select(Concept, func.coalesce(counts.c.card_count, 0))
+                .outerjoin(counts, counts.c.concept_id == Concept.id)
                 .where(Concept.course_id == course_id)
                 .order_by(Concept.importance.desc(), Concept.title)
             )

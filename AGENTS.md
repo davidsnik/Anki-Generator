@@ -1,10 +1,12 @@
 # Repository engineering contract
 
-This local Python/FastAPI + React application transforms university sources into
+This local Electron + Python/FastAPI + React application transforms university sources into
 evidence-backed Anki cards. Retain the src/anki_generator package and existing
 deterministic inspect CLI. Read the relevant [architecture](docs/architecture.md),
 [requirements](docs/requirements.md), [models](docs/data-model.md),
 [quality specification](docs/flashcard-guidelines.md) and [roadmap](docs/roadmap.md).
+Desktop usage/build/storage and process contracts are in [desktop](docs/desktop.md)
+and [backend protocol](docs/desktop-backend.md). Preserve browser development and CLI use.
 
 ## Engineering
 
@@ -17,6 +19,14 @@ deterministic inspect CLI. Read the relevant [architecture](docs/architecture.md
 - Never silently change schemas, note IDs, safety or pipeline contracts. Use Alembic
   migrations for persisted schema changes and version prompts/contracts explicitly.
 - Preserve existing work and user revisions. Do not make Git commits unless requested.
+- Course jobs execute concurrently through one durable scheduler. Preserve atomic
+  claims, same-course exclusion, immutable run inputs and shared resource budgets;
+  never replace global limits with per-job semaphores. See [tasks](docs/tasks.md).
+- Treat packaged assets as read-only; persistent desktop data/state uses XDG paths,
+  independent of installation/cwd. Keep explicit backup migration and workspace locks.
+- Keep Electron sandbox/context isolation enabled and renderer Node disabled. Validate
+  narrow IPC and navigation; inject the per-launch token only for the owned loopback
+  origin. Never expose credentials or desktop tokens in renderer code or logs.
 
 ## Development
 
@@ -27,6 +37,10 @@ deterministic inspect CLI. Read the relevant [architecture](docs/architecture.md
   pnpm frontend build/unit/browser checks. Inspect rendered UI after meaningful UI changes.
 - Diagnose failures and rerun affected checks. Never claim unexecuted checks passed.
   Distinguish controlled-provider verification from live provider/Anki validation.
+- Packaging changes require copied-distribution tests outside the checkout, actual
+  frozen subprocess/resource checks and rendered shell inspection. Keep
+  `freeze_support()` before imports and drain/checkpoint jobs before shutdown;
+  elapsed shutdown time alone never authorizes force termination.
 - Update docs with actual behavior and consequential decisions; report limits and
   uncertainty. Do not replace the user's intended outcome with an easier subset.
 
@@ -42,4 +56,5 @@ deterministic inspect CLI. Read the relevant [architecture](docs/architecture.md
 - External processing needs visible per-run consent. Keys stay server-side in memory
   or an available secure OS credential store; never plaintext SQLite/config.
 - Never commit credentials, private material, generated data or local databases.
-  Default private data is ignored data/. Never destructively modify an Anki collection.
+  Browser data defaults to ignored data/; desktop data uses private XDG paths.
+  Never destructively modify an Anki collection.

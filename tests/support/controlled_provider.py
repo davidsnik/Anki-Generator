@@ -20,6 +20,17 @@ class ControlledProvider:
         self.conflicting_concepts = False
         self.on_call = None
 
+    def embed(self, texts, *, model, dimensions):
+        """Explicit test-only vectors; this fixture makes no neural quality claim."""
+        from anki_generator.llm.embeddings import EmbeddingResult
+
+        self.calls["embeddings"] += 1
+        return EmbeddingResult(
+            [[1.0] + [0.0] * (dimensions - 1) for _ in texts],
+            model,
+            {"input_tokens": 30, "output_tokens": 0, "total_tokens": 30},
+        )
+
     def structured(self, stage, payload, schema, *, model, images=None, settings=None):
         from anki_generator.llm import ProviderError
 
@@ -87,6 +98,93 @@ class ControlledProvider:
                     }
                 ]
             data = {"concepts": [concept], "exercises": exercises, "warnings": [], "conflicts": []}
+        elif stage == "source_audit":
+            text = payload.get("text", "")
+            quote = "For a right triangle, a^2 + b^2 = c^2."
+            if quote not in text and text.strip():
+                quote = text.strip().splitlines()[0]
+            data = {
+                "targets": [
+                    {
+                        "concept": {
+                            "key": "pythagoras",
+                            "title": "Pythagorean theorem",
+                            "kind": "theorem",
+                            "parent_key": None,
+                            "statement": "For a right triangle, a^2 + b^2 = c^2.",
+                            "assumptions": ["right triangle"],
+                            "relationships": [],
+                            "importance": 0.9,
+                            "importance_reason": "Explicit original source theorem",
+                            "exercise_frequency": 0,
+                            "sources": [
+                                {
+                                    "document_id": payload["document_id"],
+                                    "page_number": payload["page_number"],
+                                    "quote": quote,
+                                    "region_id": payload.get("region_id"),
+                                    "bbox": payload.get("bbox"),
+                                    "section": None,
+                                }
+                            ],
+                            "uncertain": False,
+                            "conflicts": [],
+                        },
+                        "dimension": "theorem",
+                        "competency": "State the right-triangle identity",
+                        "exercise_pattern": None,
+                    }
+                ],
+                "warnings": [],
+                "unresolved": [],
+            }
+        elif stage == "source_matching":
+            target = payload["targets"][0]
+            existing = payload["retrieved_concepts"]
+            key = target["concept"]["key"]
+            found = next(
+                (
+                    c
+                    for c in existing
+                    if c["key"] == key
+                    or (
+                        c.get("statement") == target["concept"]["statement"]
+                        and c.get("kind") == target["concept"]["kind"]
+                    )
+                ),
+                None,
+            )
+            data = {
+                "matches": [
+                    {
+                        "target_key": target["target_key"],
+                        "concept_key": found["key"] if found else None,
+                        "relation": "same" if found else "new",
+                        "reason": "Controlled target comparison",
+                    }
+                ]
+            }
+        elif stage == "target_coverage":
+            cards = payload["retrieved_cards"]
+            data = {
+                "assessments": [
+                    {
+                        "target_id": payload["targets"][0]["id"],
+                        "status": "covered" if cards else "uncovered",
+                        "card_ids": [c["id"] for c in cards],
+                        "missing_aspects": [] if cards else ["No card tests the source target"],
+                        "reason": "Controlled independent coverage comparison",
+                    }
+                ],
+                "warnings": [],
+            }
+        elif stage == "identity":
+            data = {
+                "relation": "different",
+                "existing_id": None,
+                "assumptions_preserved": True,
+                "reason": "Controlled distinct identity",
+            }
         elif stage == "consolidation":
             concepts = [c for analysis in payload["analyses"] for c in analysis.get("concepts", [])]
             concept = dict(concepts[0])
@@ -105,7 +203,7 @@ class ControlledProvider:
                 "cards": [
                     {
                         "identity_key": "pythagoras:identity",
-                        "concept_keys": ["pythagoras"],
+                        "concept_keys": [concept.get("key", "pythagoras")],
                         "card_type": "basic",
                         "category": "theorem",
                         "question": (

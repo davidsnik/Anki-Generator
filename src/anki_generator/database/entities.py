@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import JSON, ForeignKey, UniqueConstraint
+from sqlalchemy import JSON, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -170,6 +170,12 @@ class Run(Timestamps, Base):
     cancel_requested: Mapped[bool] = mapped_column(default=False)
     started_at: Mapped[str | None] = mapped_column(default=None)
     finished_at: Mapped[str | None] = mapped_column(default=None)
+    priority: Mapped[int] = mapped_column(default=0)
+    submission_key: Mapped[str | None] = mapped_column(default=None)
+    active_seconds: Mapped[float] = mapped_column(default=0)
+    resumed_at: Mapped[str | None] = mapped_column(default=None)
+    recovery_count: Mapped[int] = mapped_column(default=0)
+    queued_at: Mapped[str | None] = mapped_column(default=now)
 
 
 class Stage(Base):
@@ -204,3 +210,18 @@ class ApplicationSetting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(primary_key=True)
     value: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+Index("ix_cards_course_updated_id", Card.course_id, Card.updated_at, Card.id)
+Index(
+    "ix_cards_course_review_quality", Card.course_id, Card.review_status, Card.verification_status
+)
+Index("ix_runs_schedule", Run.status, Run.priority.desc(), Run.created_at, Run.id)
+Index("ix_verifications_run_card", Verification.run_id, Verification.card_id)
+Index("uq_runs_course_submission", Run.course_id, Run.submission_key, unique=True)
+Index(
+    "uq_runs_executing_course",
+    Run.course_id,
+    unique=True,
+    sqlite_where=Run.status.in_(["running", "pausing", "cancelling"]),
+)

@@ -8,5 +8,19 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
     include: ['src/**/*.test.tsx'],
   },
-  build: { outDir: 'dist' },
+  build: {
+    outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/katex/')) return 'math';
+          if (
+            id.includes('/node_modules/') &&
+            /\/(react|react-dom|react-router|@tanstack)\//.test(id)
+          )
+            return 'framework';
+        },
+      },
+    },
+  },
 });

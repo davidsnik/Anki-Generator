@@ -32,17 +32,23 @@ import { ProcessingPage, RunDialog } from './Processing';
 import { KnowledgePage } from './Knowledge';
 import { CardsPage } from './Cards';
 import { ExportsPage } from './Exports';
+import { useTasks } from '../features/tasks/live';
+import { CourseTaskStatus } from '../features/tasks/CourseTaskStatus';
 import { CriteriaForm } from './Settings';
 export function CoursePage() {
   const { courseId } = useParams();
+  const taskState = useTasks();
   const [generate, setGenerate] = useState(false);
   const course = useQuery({
     queryKey: ['course', courseId],
     queryFn: () => api<Course>(`/courses/${courseId}`),
+    refetchInterval: 5000,
   });
   if (course.isPending) return <Loading />;
   if (course.isError) return <ErrorPanel error={course.error} retry={() => course.refetch()} />;
   const c = course.data;
+  const active =
+    taskState.data?.active_runs.find((task) => task.course_id === c.id) || c.active_task;
   return (
     <>
       <Link className="back-link" to="/courses">
@@ -57,7 +63,16 @@ export function CoursePage() {
             <Badge tone={c.archived ? 'neutral' : 'green'}>
               {c.archived ? 'Archived' : 'Active course'}
             </Badge>
-            <button className="button primary" onClick={() => setGenerate(true)}>
+            <button
+              className="button primary"
+              disabled={!!active}
+              title={
+                active
+                  ? 'This course already has an active task. Open its task details to manage it.'
+                  : undefined
+              }
+              onClick={() => setGenerate(true)}
+            >
               <Play size={16} /> Generate cards
             </button>
           </>
@@ -73,6 +88,7 @@ export function CoursePage() {
           <CheckCheck size={14} /> Source-supported learning
         </span>
       </div>
+      <CourseTaskStatus courseId={c.id} courseName={c.name} latest fallback={c.active_task} />
       <nav className="tabs" aria-label="Course sections">
         {[
           { path: 'documents', label: 'Documents', icon: FileText },

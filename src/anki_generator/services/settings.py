@@ -3,12 +3,14 @@
 import os
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from sqlalchemy.orm import sessionmaker
 
 from anki_generator.database.entities import ApplicationSetting
 from anki_generator.domain import GenerationCriteria, InputModel, RoleInfluence, StageModels
 from anki_generator.ingestion.contracts import ExtractionOptions
+from anki_generator.services.pipeline_options import ProcessingOptions, validate_prompt_overrides
+from anki_generator.services.task_options import TaskOptions
 
 
 class ApplicationSettings(InputModel):
@@ -19,6 +21,14 @@ class ApplicationSettings(InputModel):
     role_influence: RoleInfluence = Field(default_factory=RoleInfluence)
     extraction: ExtractionOptions = Field(default_factory=ExtractionOptions)
     theme: Literal["light", "dark", "system"] = "system"
+    processing: ProcessingOptions = Field(default_factory=ProcessingOptions)
+    prompt_overrides: dict[str, str] = Field(default_factory=dict)
+    tasks: TaskOptions = Field(default_factory=TaskOptions)
+
+    @field_validator("prompt_overrides")
+    @classmethod
+    def supported_prompts(cls, value: dict[str, str]) -> dict[str, str]:
+        return validate_prompt_overrides(value)
 
 
 def get_settings(sessions: sessionmaker) -> ApplicationSettings:
