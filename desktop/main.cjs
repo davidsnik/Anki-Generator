@@ -94,6 +94,8 @@ let win = null,
   quitPending = false,
   restarting = false;
 let quitAfterRestart = false;
+let keptUnsavedChanges = 0;
+let unsavedPromptOpen = false;
 let state = {
   status: "starting",
   message: "Preparing your private workspace…",
@@ -175,14 +177,59 @@ function showWindow(route) {
   win.focus();
   if (route && state.status === "ready") send("desktop:navigate", route);
 }
+function confirmUnsavedChanges(window, event) {
+  // Electron requires this decision synchronously. Preventing this event means
+  // overriding the renderer's beforeunload veto, so only explicit discard does so.
+  if (unsavedPromptOpen) {
+    keptUnsavedChanges++;
+    return;
+  }
+  unsavedPromptOpen = true;
+  let choice;
+  try {
+    choice = dialog.showMessageBoxSync(window, {
+      type: "question",
+      title: "Unsaved changes",
+      message: "Keep editing your unsaved changes?",
+      detail:
+        "This window has changes that have not been saved. Keep editing to save them, or discard them to continue closing, restarting or reloading the workspace.",
+      buttons: ["Keep editing", "Discard changes"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+  } finally {
+    unsavedPromptOpen = false;
+  }
+  if (choice === 1) event.preventDefault();
+  else keptUnsavedChanges++;
+}
+function restoreAfterKeptChanges(previousState) {
+  // A backend/window failure may arrive while the native decision is open.
+  // Never overwrite that newer failure with an earlier "ready" snapshot.
+  if (backend?.status === "failed" || state.status === "failed") return;
+  setState(previousState);
+}
+async function loadWorkspace(url) {
+  const before = keptUnsavedChanges;
+  try {
+    await win.loadURL(url);
+    return true;
+  } catch (error) {
+    if (keptUnsavedChanges !== before && error.code === "ERR_ABORTED")
+      return false;
+    throw error;
+  }
+}
 async function startupView() {
   if (
     win &&
     !win.isDestroyed() &&
     !win.webContents.getURL().startsWith("anki-shell://startup/")
   )
-    await win.loadURL("anki-shell://startup/");
+    if (!(await loadWorkspace("anki-shell://startup/"))) return false;
   send("desktop:state", publicInfo());
+  return true;
 }
 function allowRequest(value, type) {
   if (sameOrigin(value, backend?.origin) || sameOrigin(value, frontendOrigin))
@@ -337,6 +384,9 @@ function configureSession() {
   });
 }
 function secureWindow(window) {
+  window.webContents.on("will-prevent-unload", (event) =>
+    confirmUnsavedChanges(window, event),
+  );
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (
       backend?.origin &&
@@ -501,7 +551,7 @@ function menu() {
             label: "Reload workspace",
             accelerator: "CmdOrCtrl+R",
             click: () => {
-              if (state.status === "ready") win?.reload();
+              if (state.status === "ready" && !unsavedPromptOpen) win?.reload();
             },
           },
           { role: "resetZoom" },
@@ -749,13 +799,14 @@ async function awaitShutdown() {
   }
 }
 async function requestQuit() {
-  if (quitting || quitPending) return;
+  if (quitting || quitPending || unsavedPromptOpen) return;
   if (restarting) {
     quitAfterRestart = true;
     setState({ message: "Finishing the current restart before closing…" });
     return;
   }
   quitPending = true;
+  const previousState = { ...state };
   try {
     let active = 0,
       unknown = false;
@@ -791,14 +842,17 @@ async function requestQuit() {
         return;
       }
     }
-    clearInterval(pollTimer);
     setState({
       status: "stopping",
       message: "Finishing current operations and saving checkpoints…",
       details:
         "Keep this window open until shutdown completes. Saved tasks can be resumed after relaunch.",
     });
-    await startupView();
+    if (!(await startupView())) {
+      restoreAfterKeptChanges(previousState);
+      return;
+    }
+    clearInterval(pollTimer);
     if (backend) await awaitShutdown();
     quitting = true;
     app.quit();
@@ -815,9 +869,10 @@ async function requestQuit() {
   }
 }
 async function restartBackend() {
-  if (restarting || quitPending)
+  if (restarting || quitPending || unsavedPromptOpen)
     throw new Error("A lifecycle operation is already in progress.");
   restarting = true;
+  const previousState = { ...state };
   try {
     if (backend?.origin && state.status === "failed") {
       try {
@@ -855,7 +910,10 @@ async function restartBackend() {
       message: "Reconnecting to your saved workspace…",
       details: "",
     });
-    await startupView();
+    if (!(await startupView())) {
+      restoreAfterKeptChanges(previousState);
+      return { restarted: false };
+    }
     clearInterval(pollTimer);
     if (backend) await awaitShutdown();
     if (quitAfterRestart) return { restarted: false };

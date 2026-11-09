@@ -17,6 +17,7 @@ from sqlalchemy import insert, select
 from anki_generator.api.app import create_app
 from anki_generator.database.entities import Card, Course, Document, Page, Revision, new_id
 from anki_generator.services.records import require
+from anki_generator.services.settings import ApplicationSettings, get_settings
 from tests.support.controlled_provider import ControlledProvider
 
 
@@ -102,7 +103,8 @@ def create_browser_app() -> FastAPI:
     app.router.routes[:] = [
         route
         for route in app.router.routes
-        if getattr(route, "path", "") not in {"/api/settings/test", "/api/settings/models"}
+        if getattr(route, "path", "")
+        not in {"/api/settings/test", "/api/settings/models", "/api/settings/models/validate"}
     ]
 
     @app.post("/api/settings/test")
@@ -117,8 +119,54 @@ def create_browser_app() -> FastAPI:
         }
 
     @app.get("/api/settings/models")
-    def controlled_models() -> dict[str, Any]:
-        return {"models": [{"id": "gpt-6-astra"}], "recommendation": "gpt-6-astra"}
+    def controlled_models(refresh: bool = False) -> dict[str, Any]:
+        rt = app.state.runtime
+        saved = get_settings(rt.sessions)
+        return rt.model_discovery.catalogue(
+            rt.secrets.get(),
+            MetadataProvider,
+            refresh=refresh,
+            selected=[*saved.models.model_dump().values(), saved.processing.embedding_model],
+        )
+
+    class MetadataProvider:
+        def models(self) -> list[str]:
+            if app.state.runtime.secrets.get() == "sk-invalid-test":
+                from anki_generator.llm import ProviderError
+
+                raise ProviderError(
+                    "The API key was rejected. Replace it in Settings.", kind="authentication"
+                )
+            return [
+                "gpt-6-astra",
+                "gpt-6.1-sol",
+                "gpt-6-luna",
+                "text-embedding-3-small",
+                "text-embedding-3-large",
+                "custom-visible-test",
+            ]
+
+        def retrieve_model(self, identifier: str) -> str:
+            from anki_generator.llm import ProviderError
+
+            if identifier in self.models():
+                return identifier
+            raise ProviderError(
+                "This model is unavailable to the test account.", kind="configuration"
+            )
+
+        def close_owned_client(self) -> None:
+            pass
+
+    @app.post("/api/settings/models/validate")
+    def controlled_model_validation(changes: dict[str, Any]) -> dict[str, Any]:
+        rt = app.state.runtime
+        current = get_settings(rt.sessions).model_dump()
+        for name, value in changes.items():
+            current[name] = {**current[name], **value} if isinstance(value, dict) else value
+        return rt.model_discovery.validate(
+            ApplicationSettings.model_validate(current), rt.secrets.get(), MetadataProvider
+        )
 
     @app.post("/api/test/concurrency")
     def configure_gates(values: GateInput) -> dict[str, Any]:
@@ -199,7 +247,11 @@ def create_browser_app() -> FastAPI:
 
     def test_route_priority(route: Any) -> int:
         path = getattr(route, "path", "")
-        if path in {"/api/settings/test", "/api/settings/models"} or path.startswith("/api/test/"):
+        if path in {
+            "/api/settings/test",
+            "/api/settings/models",
+            "/api/settings/models/validate",
+        } or path.startswith("/api/test/"):
             return 0
         return 2 if path == "/{path:path}" else 1
 

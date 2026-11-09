@@ -1,8 +1,8 @@
 """Validated execution budgets and reproducible per-run experiment overrides."""
 
-from typing import Literal
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from anki_generator.domain import validate_model_identifier
 
 
 class ProcessingOptions(BaseModel):
@@ -16,14 +16,17 @@ class ProcessingOptions(BaseModel):
     source_chunk_characters: int = Field(default=10000, ge=1000, le=24000)
     vision_batch_images: int = Field(default=4, ge=1, le=12)
     semantic_candidates: int = Field(default=12, ge=2, le=50)
-    embedding_model: Literal["text-embedding-3-small", "text-embedding-3-large"] = (
-        "text-embedding-3-small"
-    )
+    embedding_model: str = Field(default="text-embedding-3-small", min_length=1, max_length=200)
     embedding_dimensions: int = Field(default=512, ge=64, le=3072)
     embedding_batch_size: int = Field(default=32, ge=1, le=128)
     identity_similarity: float = Field(default=0.92, ge=0.8, le=1)
     identity_margin: float = Field(default=0.07, ge=0, le=0.3)
     source_audit: bool = True
+
+    @field_validator("embedding_model")
+    @classmethod
+    def valid_embedding_model(cls, value: str) -> str:
+        return validate_model_identifier(value)
 
     @model_validator(mode="after")
     def supported_dimensions(self):

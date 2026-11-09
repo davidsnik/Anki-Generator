@@ -10,19 +10,57 @@ export class ApiError extends Error {
     this.status = status;
   }
 }
+function errorMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .slice(0, 4)
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (!item || typeof item !== 'object') return '';
+        const value = item as { msg?: string; message?: string; loc?: unknown[] };
+        const field = value.loc
+          ?.filter((part) => part !== 'body')
+          .join(' → ')
+          .replace(/_/g, ' ');
+        const message = value.msg || value.message;
+        return message ? `${field ? `${field}: ` : ''}${message}` : '';
+      })
+      .filter(Boolean);
+    return messages.join(' · ') || fallback;
+  }
+  if (detail && typeof detail === 'object') {
+    const value = detail as { message?: unknown; errors?: unknown };
+    if (typeof value.message === 'string') return value.message;
+    if (Array.isArray(value.errors)) return errorMessage(value.errors, fallback);
+  }
+  return fallback;
+}
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body && !(options.body instanceof FormData))
     headers.set('Content-Type', 'application/json');
   if (options.method && !['GET', 'HEAD'].includes(options.method))
     headers.set('X-CSRF-Token', csrfToken);
-  const response = await fetch(`/api${path}`, { ...options, headers, credentials: 'same-origin' });
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, { ...options, headers, credentials: 'same-origin' });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    throw new ApiError(
+      'The workspace could not be reached. Wait a moment, then try again. If it stays unavailable, restart the application.',
+      0,
+    );
+  }
   if (!response.ok) {
-    let message = `Request failed (${response.status}).`;
+    let message =
+      response.status === 422
+        ? 'Some entries need attention. Check the highlighted fields and try again.'
+        : `The request could not finish (${response.status}). Try again or inspect diagnostics if the problem continues.`;
     try {
       const data = await response.json();
       const detail = data.detail ?? data.error ?? data.message;
-      message = typeof detail === 'string' ? detail : JSON.stringify(detail);
+      message = errorMessage(detail, message);
     } catch {
       /* HTTP fallback */
     }

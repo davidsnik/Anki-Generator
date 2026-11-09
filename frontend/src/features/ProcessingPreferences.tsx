@@ -45,85 +45,84 @@ export function ProcessingPreferences({
 }) {
   const [stage, setStage] = useState('generation');
   return (
-    <section className="panel">
-      <SectionHead title="Bounded processing & reproducibility">
-        These limits govern independent stages within each task, alongside the shared limits above.
-        Each run records its configuration; changing preferences affects new runs.
-      </SectionHead>
-      <div className="form-grid">
-        {limits.map(([key, label, fallback, min, max, step]) => (
-          <label key={key}>
-            {label}
-            <input
-              type="number"
-              min={min}
-              max={
-                key === 'embedding_dimensions' && value.embedding_model !== 'text-embedding-3-large'
-                  ? 1536
-                  : max
-              }
-              step={step}
-              value={Number(value[key] ?? fallback)}
-              onChange={(e) => onChange({ ...value, [key]: Number(e.target.value) })}
+    <details className="panel settings-advanced-section">
+      <summary className="settings-section-summary">
+        <SectionHead title="Advanced processing & prompts">
+          Fine-tune resource limits or replace individual stage prompts. The defaults work for most
+          courses.
+        </SectionHead>
+      </summary>
+      <div className="settings-section-content">
+        <p className="field-help">
+          These settings apply inside each task, alongside the shared limits above. Each run records
+          its configuration; changing preferences affects new runs.
+        </p>
+        <div className="form-grid">
+          {limits.map(([key, label, fallback, min, max, step]) => (
+            <label key={key}>
+              {label}
+              <input
+                type="number"
+                min={min}
+                max={
+                  key === 'embedding_dimensions' &&
+                  value.embedding_model !== 'text-embedding-3-large'
+                    ? 1536
+                    : max
+                }
+                step={step}
+                value={Number(value[key] ?? fallback)}
+                onChange={(e) => onChange({ ...value, [key]: Number(e.target.value) })}
+              />
+            </label>
+          ))}
+        </div>
+        <label className="check-label">
+          <input
+            type="checkbox"
+            checked={value.source_audit !== false}
+            onChange={(e) => onChange({ ...value, source_audit: e.target.checked })}
+          />
+          Independently audit source coverage against learning targets
+        </label>
+        <details>
+          <summary>Advanced versioned prompt overrides</summary>
+          <p className="field-help">
+            An override replaces that stage’s default prompt for new runs. Source material remains
+            untrusted data. Empty text restores the default. Save preferences to apply; experiments
+            can compare overrides without changing these defaults.
+          </p>
+          <label>
+            Prompt stage
+            <select value={stage} onChange={(e) => setStage(e.target.value)}>
+              {stages.map((s) => (
+                <option key={s} value={s}>
+                  {human(s)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Prompt override
+            <textarea
+              rows={8}
+              maxLength={50000}
+              value={prompts[stage] ?? ''}
+              placeholder="Use the versioned default prompt"
+              onChange={(e) => {
+                const next = { ...prompts };
+                if (e.target.value.trim()) next[stage] = e.target.value;
+                else delete next[stage];
+                onPrompts(next);
+              }}
             />
           </label>
-        ))}
-        <label>
-          Semantic embedding model
-          <select
-            value={String(value.embedding_model ?? 'text-embedding-3-small')}
-            onChange={(e) => onChange({ ...value, embedding_model: e.target.value })}
-          >
-            <option>text-embedding-3-small</option>
-            <option>text-embedding-3-large</option>
-          </select>
-        </label>
-      </div>
-      <label className="check-label">
-        <input
-          type="checkbox"
-          checked={value.source_audit !== false}
-          onChange={(e) => onChange({ ...value, source_audit: e.target.checked })}
-        />
-        Independently audit source coverage against learning targets
-      </label>
-      <details>
-        <summary>Advanced versioned prompt overrides</summary>
+        </details>
         <p className="field-help">
-          An override replaces that stage’s default prompt for new runs. Source material remains
-          untrusted data. Empty text restores the default. Save preferences to apply; experiments
-          can compare overrides without changing these defaults.
+          Higher concurrency can increase simultaneous API usage. Similarity proposes candidates; it
+          does not independently establish correctness or permission to replace reviewed content.
         </p>
-        <label>
-          Prompt stage
-          <select value={stage} onChange={(e) => setStage(e.target.value)}>
-            {stages.map((s) => (
-              <option key={s} value={s}>
-                {human(s)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Prompt override
-          <textarea
-            rows={8}
-            maxLength={50000}
-            value={prompts[stage] ?? ''}
-            placeholder="Use the versioned default prompt"
-            onChange={(e) => {
-              const next = { ...prompts };
-              if (e.target.value.trim()) next[stage] = e.target.value;
-              else delete next[stage];
-              onPrompts(next);
-            }}
-          />
-        </label>
-      </details>
-      <p className="field-help">
-        Higher concurrency can increase simultaneous API usage. Similarity proposes candidates; it
-        does not independently establish correctness or permission to replace reviewed content.
-      </p>
-    </section>
+      </div>
+    </details>
   );
 }

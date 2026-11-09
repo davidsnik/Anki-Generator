@@ -104,7 +104,7 @@ export function CoursePage() {
           </NavLink>
         ))}
       </nav>
-      <Routes>
+      <Routes key={c.id}>
         <Route index element={<DocumentsPage course={c} />} />
         <Route path="documents" element={<DocumentsPage course={c} />} />
         <Route path="knowledge" element={<KnowledgePage course={c} />} />
@@ -233,6 +233,9 @@ function Preferences({ course }: { course: Course }) {
       {remove && (
         <Confirm
           title={`Delete ${course.name}?`}
+          confirmLabel="Delete course"
+          cancelLabel="Keep course"
+          pending={del.isPending}
           onClose={() => setRemove(false)}
           onConfirm={() => del.mutate()}
         >

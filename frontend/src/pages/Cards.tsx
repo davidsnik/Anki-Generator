@@ -25,6 +25,7 @@ import type { Card, Concept, Course, Json, Page, Revision, Source } from '../ser
 import { api, list, write } from '../services/api';
 import {
   Badge,
+  Confirm,
   Empty,
   ErrorPanel,
   human,
@@ -40,6 +41,7 @@ import { SourcePreview } from './Documents';
 import { RunDialog } from './Processing';
 import { Pagination } from '../features/Pagination';
 import type { PageResult } from '../features/Pagination';
+import { readCardFilters, rememberCardFilters } from '../services/cardFilters';
 import {
   BulkReview,
   RevisionComparison,
@@ -126,11 +128,12 @@ export function Flashcard({
   );
 }
 export function CardsPage({ course }: { course: Course }) {
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('all');
-  const [verification, setVerification] = useState('all');
+  const [savedFilters] = useState(() => readCardFilters(course.id));
+  const [search, setSearch] = useState(savedFilters.search);
+  const [status, setStatus] = useState(savedFilters.status);
+  const [verification, setVerification] = useState(savedFilters.verification);
   const [offset, setOffset] = useState(0);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(savedFilters.search);
   const [selection, setSelection] = useState<Map<string, number>>(new Map());
   const [navigation, setNavigation] = useState<{ edge: 'first' | 'last'; offset: number } | null>(
     null,
@@ -139,12 +142,37 @@ export function CardsPage({ course }: { course: Course }) {
     const timer = setTimeout(() => setQuery(search), 200);
     return () => clearTimeout(timer);
   }, [search]);
-  const [type, setType] = useState('all');
-  const [topic, setTopic] = useState('all');
-  const [sourceFilter, setSourceFilter] = useState('all');
-  const [sort, setSort] = useState('newest');
+  const [type, setType] = useState(savedFilters.type);
+  const [topic, setTopic] = useState(savedFilters.topic);
+  const [sourceFilter, setSourceFilter] = useState(savedFilters.sourceFilter);
+  const [sort, setSort] = useState(savedFilters.sort);
   useEffect(() => setOffset(0), [query, status, verification, type, topic, sourceFilter, sort]);
-  const [view, setView] = useState('grid');
+  const [view, setView] = useState(savedFilters.view);
+  useEffect(
+    () =>
+      rememberCardFilters(course.id, {
+        search,
+        status,
+        verification,
+        type,
+        topic,
+        sourceFilter,
+        sort,
+        view,
+      }),
+    [course.id, search, status, verification, type, topic, sourceFilter, sort, view],
+  );
+  const hasFilters =
+    !!search || [status, verification, type, topic, sourceFilter].some((value) => value !== 'all');
+  function clearFilters() {
+    setSearch('');
+    setQuery('');
+    setStatus('all');
+    setVerification('all');
+    setType('all');
+    setTopic('all');
+    setSourceFilter('all');
+  }
   const [selected, setSelected] = useState<Card | null>(null);
   const [editing, setEditing] = useState<Card | 'new' | null>(null);
   const [flipped, setFlipped] = useState<Set<string>>(new Set());
@@ -243,6 +271,7 @@ export function CardsPage({ course }: { course: Course }) {
           <button
             className={view === 'grid' ? 'active' : ''}
             aria-label="Grid view"
+            aria-pressed={view === 'grid'}
             onClick={() => setView('grid')}
           >
             <Grid2X2 size={17} />
@@ -250,6 +279,7 @@ export function CardsPage({ course }: { course: Course }) {
           <button
             className={view === 'list' ? 'active' : ''}
             aria-label="List view"
+            aria-pressed={view === 'list'}
             onClick={() => setView('list')}
           >
             <List size={17} />
@@ -257,11 +287,47 @@ export function CardsPage({ course }: { course: Course }) {
           <button
             className={view === 'study' ? 'active' : ''}
             aria-label="Immersive study view"
+            aria-pressed={view === 'study'}
             onClick={() => setView('study')}
           >
             <Expand size={17} />
           </button>
         </div>
+      </div>
+      <div className="review-shortcuts" aria-label="Quick review filters">
+        <button className="button small" aria-pressed={!hasFilters} onClick={clearFilters}>
+          All cards
+        </button>
+        <button
+          className="button small"
+          aria-pressed={status === 'pending' && verification === 'all'}
+          onClick={() => {
+            clearFilters();
+            setStatus('pending');
+          }}
+        >
+          Awaiting review
+        </button>
+        <button
+          className="button small"
+          aria-pressed={verification === 'needs_attention'}
+          onClick={() => {
+            clearFilters();
+            setVerification('needs_attention');
+          }}
+        >
+          Needs attention
+        </button>
+        <button
+          className="button small"
+          aria-pressed={status === 'approved' && verification === 'all'}
+          onClick={() => {
+            clearFilters();
+            setStatus('approved');
+          }}
+        >
+          Approved cards
+        </button>
       </div>
       <div className="filter-row">
         <select
@@ -328,6 +394,11 @@ export function CardsPage({ course }: { course: Course }) {
           ))}
         </select>
         <span>{cards.data?.total ?? 0} cards</span>
+        {hasFilters && (
+          <button className="text-link" onClick={clearFilters}>
+            Clear filters
+          </button>
+        )}
       </div>
       <div className="inline-actions selection-controls">
         <button className="button small" disabled={!filtered.length} onClick={selectVisible}>
@@ -355,19 +426,24 @@ export function CardsPage({ course }: { course: Course }) {
           <Empty
             icon={Layers}
             title={
-              search || status !== 'all'
+              hasFilters
                 ? 'No cards match these filters'
                 : 'Good questions are the start of understanding'
             }
             action={
-              <button className="button" onClick={() => setEditing('new')}>
-                <Plus size={16} />
-                Write your own card
-              </button>
+              hasFilters ? (
+                <button className="button" onClick={clearFilters}>
+                  Clear filters
+                </button>
+              ) : (
+                <button className="button" onClick={() => setEditing('new')}>
+                  <Plus size={16} /> Write your own card
+                </button>
+              )
             }
           >
-            {cards.data?.total
-              ? 'Try a different search or review status.'
+            {hasFilters
+              ? 'Try a different search or clear the filters to see all cards in this course.'
               : 'Generate a source-supported deck from your documents, or add a card by hand.'}
           </Empty>
         </section>
@@ -450,6 +526,13 @@ export function CardsPage({ course }: { course: Course }) {
           course={course}
           key={selected.id}
           cardId={selected.id}
+          position={
+            filtered.some((card) => card.id === selected.id)
+              ? offset + filtered.findIndex((card) => card.id === selected.id) + 1
+              : 0
+          }
+          total={cards.data?.total || 0}
+          isSelected={selection.has(selected.id)}
           onPrevious={() => {
             const i = filtered.findIndex((c) => c.id === selected.id);
             if (i > 0) setSelected(filtered[i - 1]);
@@ -560,7 +643,13 @@ function CardInspector({
   onPrevious,
   onNext,
   onToggleSelection,
+  position,
+  total,
+  isSelected,
 }: {
+  position: number;
+  total: number;
+  isSelected: boolean;
   onPrevious: () => void;
   onNext: () => void;
   onToggleSelection: () => void;
@@ -624,14 +713,17 @@ function CardInspector({
       <div className={`inspector-layout ${source ? 'has-source' : ''}`}>
         <div className="inspector-card">
           <div className="inline-actions">
-            <button className="button small" onClick={onPrevious}>
+            <span className="review-position" aria-live="polite">
+              {position ? `Card ${position} of ${total}` : 'No longer matches these filters'}
+            </span>
+            <button className="button small" disabled={position <= 1} onClick={onPrevious}>
               ← Previous card
             </button>
-            <button className="button small" onClick={onNext}>
+            <button className="button small" disabled={position >= total} onClick={onNext}>
               Next card →
             </button>
-            <button className="button small" onClick={onToggleSelection}>
-              Toggle selection
+            <button className="button small" aria-pressed={isSelected} onClick={onToggleSelection}>
+              {isSelected ? 'Remove from selection' : 'Select card'}
             </button>
           </div>
           <ShortcutHelp />
@@ -673,14 +765,6 @@ function CardInspector({
               </p>
             )}
           </div>
-          {!!card.issues?.length && (
-            <div className="warning-note">
-              <strong>Review findings</strong>
-              {card.issues.map((issue, i) => (
-                <p key={i}>{typeof issue === 'string' ? issue : JSON.stringify(issue)}</p>
-              ))}
-            </div>
-          )}
           <VerificationFindings
             verifications={((card as Card & { verifications?: Json[] }).verifications || []).filter(
               (v) => v.revision_number === undefined || v.revision_number === card.revision_number,
@@ -812,7 +896,7 @@ function CardInspector({
     </Modal>
   );
 }
-function CardEditor({
+export function CardEditor({
   course,
   card,
   onClose,
@@ -838,6 +922,47 @@ function CardEditor({
       (v): v is Source => !!v && typeof v === 'object' && 'document_id' in v,
     ),
   );
+  const [discard, setDiscard] = useState(false);
+  const [originalDraft] = useState(() =>
+    JSON.stringify([
+      question,
+      answer,
+      explanation,
+      tags,
+      type,
+      kind,
+      concept,
+      sourceDocument,
+      page,
+      imageRefs,
+    ]),
+  );
+  const dirty =
+    originalDraft !==
+    JSON.stringify([
+      question,
+      answer,
+      explanation,
+      tags,
+      type,
+      kind,
+      concept,
+      sourceDocument,
+      page,
+      imageRefs,
+    ]);
+  const valid =
+    !!question.trim() &&
+    (type === 'cloze' ? /\{\{c\d+::[^}]+\}\}/.test(question) : !!answer.trim());
+  useEffect(() => {
+    if (!dirty) return;
+    const protect = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', protect);
+    return () => window.removeEventListener('beforeunload', protect);
+  }, [dirty]);
   const pages = useQuery({
     queryKey: ['pages', sourceDocument],
     queryFn: async () => list<Page>(await api(`/documents/${sourceDocument}/pages`)),
@@ -902,13 +1027,28 @@ function CardEditor({
     review_status: card?.review_status || 'pending',
     verification_status: card?.verification_status || 'unverified',
   } as Card;
+  function requestClose() {
+    if (save.isPending) return;
+    if (dirty) setDiscard(true);
+    else onClose();
+  }
   return (
-    <Modal title={card ? 'Refine this card' : 'Write a thoughtful question'} onClose={onClose} wide>
+    <Modal
+      title={card ? 'Refine this card' : 'Write a thoughtful question'}
+      onClose={requestClose}
+      wide
+    >
       <div className="editor-layout">
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            save.mutate();
+            if (valid && !save.isPending) save.mutate();
+          }}
+          onKeyDown={(event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+              event.preventDefault();
+              event.currentTarget.requestSubmit();
+            }
           }}
         >
           <div className="form-grid">
@@ -966,6 +1106,11 @@ function CardEditor({
               }
             />
           </label>
+          {type === 'cloze' && (
+            <p className="field-help">
+              Hide the answer with {'{{c1::answer}}'}. The preview shows what you will recall.
+            </p>
+          )}
           <label>
             Answer
             <textarea
@@ -996,7 +1141,13 @@ function CardEditor({
           <div className="form-grid">
             <label>
               Supporting source
-              <select value={sourceDocument} onChange={(e) => setSourceDocument(e.target.value)}>
+              <select
+                value={sourceDocument}
+                onChange={(e) => {
+                  setSourceDocument(e.target.value);
+                  setPage(1);
+                }}
+              >
                 <option value="">No source attached</option>
                 {documents.data?.map((d) => (
                   <option value={d.id} key={d.id}>
@@ -1082,14 +1233,22 @@ function CardEditor({
           </p>
           {save.error && <ErrorPanel error={save.error} />}
           <div className="form-actions">
-            <button className="button" type="button" onClick={onClose}>
+            <button
+              className="button"
+              type="button"
+              disabled={save.isPending}
+              onClick={requestClose}
+            >
               Cancel
             </button>
-            <button className="button primary" disabled={save.isPending || !question.trim()}>
+            <button className="button primary" disabled={save.isPending || !valid}>
               <Save size={16} />
               {save.isPending ? 'Saving…' : 'Save card'}
             </button>
           </div>
+          <p className="field-help">
+            {dirty ? 'Unsaved changes · ' : ''}Ctrl/⌘ + Enter saves this card.
+          </p>
         </form>
         <aside className="editor-preview">
           <div className="eyebrow">
@@ -1121,6 +1280,17 @@ function CardEditor({
           )}
         </aside>
       </div>
+      {discard && (
+        <Confirm
+          title="Discard your card changes?"
+          confirmLabel="Discard changes"
+          cancelLabel="Keep editing"
+          onClose={() => setDiscard(false)}
+          onConfirm={onClose}
+        >
+          Your saved card and revision history stay intact. These unsaved edits will be lost.
+        </Confirm>
+      )}
     </Modal>
   );
 }

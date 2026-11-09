@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, useCallback, useId } from 'react';
 import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { AlertCircle, Check, ChevronRight, LoaderCircle, X, Sparkles, Search } from 'lucide-react';
@@ -140,6 +140,7 @@ export function Modal({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
     const dialog = ref.current;
     dialog?.showModal();
@@ -148,14 +149,18 @@ export function Modal({
   return (
     <dialog
       ref={ref}
+      aria-labelledby={titleId}
       className={`modal ${wide ? 'wide' : ''}`}
-      onCancel={onClose}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div className="modal-head">
-        <h2>{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         <button className="icon-button" aria-label="Close dialog" onClick={onClose}>
           <X size={20} />
         </button>
@@ -170,22 +175,32 @@ export function Confirm({
   onConfirm,
   onClose,
   danger = true,
+  confirmLabel,
+  cancelLabel = 'Keep it',
+  pending = false,
 }: {
   title: string;
   children: ReactNode;
   onConfirm: () => void;
   onClose: () => void;
   danger?: boolean;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  pending?: boolean;
 }) {
   return (
     <Modal title={title} onClose={onClose}>
       <p className="muted">{children}</p>
       <div className="form-actions">
-        <button className="button" onClick={onClose}>
-          Keep it
+        <button className="button" disabled={pending} onClick={onClose}>
+          {cancelLabel}
         </button>
-        <button className={`button ${danger ? 'danger' : 'primary'}`} onClick={onConfirm}>
-          Confirm {danger ? 'deletion' : 'action'}
+        <button
+          className={`button ${danger ? 'danger' : 'primary'}`}
+          disabled={pending}
+          onClick={onConfirm}
+        >
+          {pending ? 'Working…' : confirmLabel || `Confirm ${danger ? 'deletion' : 'action'}`}
         </button>
       </div>
     </Modal>

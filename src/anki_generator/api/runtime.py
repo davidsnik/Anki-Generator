@@ -27,6 +27,9 @@ class Runtime:
         self.restore_tokens: dict[str, Any] = {}
         self.sessions = open_database(self.data_root)
         self.secrets = SecretStore()
+        from anki_generator.services.model_discovery import ModelDiscovery
+
+        self.model_discovery = ModelDiscovery()
         from anki_generator.orchestration.runner import DurableRunner
 
         self.runner = DurableRunner(

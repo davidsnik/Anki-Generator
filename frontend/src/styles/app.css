@@ -28,6 +28,50 @@
   --radius: 15px;
   line-height: 1.55;
 }
+
+/* Shared interaction improvements retain the existing light/dark palette. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.review-shortcuts,
+.document-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  margin: 14px 0;
+}
+.review-shortcuts button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+  border-color: var(--accent);
+}
+.document-bulk-actions {
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.document-bulk-actions label {
+  margin: 0;
+}
+.document-bulk-actions select {
+  margin: 4px 0 0;
+  min-width: 185px;
+}
+.review-position {
+  color: var(--muted);
+  font-size: 12px;
+}
+.document-row > input[type='checkbox'] {
+  flex: 0 0 auto;
+}
 * {
   box-sizing: border-box;
 }
@@ -2268,6 +2312,21 @@ details pre {
   font-size: 10px;
   color: #c7a9db;
   margin-left: auto;
+}
+.field-help {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.settings-layout label {
+  font-size: 12px;
+}
+.settings-layout .muted {
+  font-size: 13px;
+  line-height: 1.65;
+}
+.review-shortcuts .button {
+  font-size: 12px;
 }
 .cards-grid {
   display: grid;
@@ -5488,4 +5547,51 @@ kbd {
   overflow-wrap: anywhere;
   max-height: 360px;
   overflow-y: auto;
+}
+.filter-row select {
+  font-size: 12px;
+  min-height: 36px;
+  color: var(--muted);
+}
+.filter-row > span {
+  font-size: 12px;
+  color: var(--muted);
+}
+.icon-button {
+  min-width: 32px;
+  min-height: 32px;
+}
+.editor-layout form > .form-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 12px 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 760px) {
+  .document-row {
+    flex-wrap: wrap;
+  }
+  .document-row .document-info {
+    flex: 1;
+    min-width: 160px;
+  }
+  .document-row .row-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  .review-shortcuts {
+    gap: 6px;
+  }
+  .review-shortcuts .button {
+    min-height: 36px;
+    font-size: 11px;
+  }
+  .document-bulk-actions {
+    align-items: flex-start;
+  }
+  .document-bulk-actions select {
+    width: 100%;
+  }
 }

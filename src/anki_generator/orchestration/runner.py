@@ -38,7 +38,8 @@ class DurableRunner:
         self.session_factory = session_factory
         self.data_root = data_root.resolve()
         self.key_getter = key_getter
-        self.provider_factory = provider_factory or (lambda key, config: OpenAIProvider(key))
+        self._default_provider_factory = lambda key, config: OpenAIProvider(key)
+        self.provider_factory = provider_factory or self._default_provider_factory
         self.resources = GlobalResources(get_settings(session_factory).tasks)
         self._wake = threading.Event()
         self._stop = threading.Event()
@@ -53,6 +54,10 @@ class DurableRunner:
         self._managed: set[str] = set()
         self._recovered = False
         self._scheduler_error: str | None = None
+
+    @property
+    def uses_custom_provider(self) -> bool:
+        return self.provider_factory is not self._default_provider_factory
 
     @contextmanager
     def _write(self) -> Iterator[Any]:

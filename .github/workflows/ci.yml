@@ -21,8 +21,6 @@ jobs:
           version: "0.13.7"
           python-version: "3.12"
           enable-cache: true
-      - name: Install locked dependencies
-        run: uv sync --locked
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -32,38 +30,15 @@ jobs:
         uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           version: "11.19.0"
-      - name: Install frontend dependencies
-        run: pnpm --dir frontend install --frozen-lockfile
-      - name: Build and unit-test frontend
-        run: |
-          pnpm --dir frontend run build
-          pnpm --dir frontend test
-          pnpm --dir frontend run format:check
-      - name: Run tests
-        run: uv run --locked pytest
-      - name: Check lint
-        run: uv run --locked ruff check .
-      - name: Check formatting
-        run: uv run --locked ruff format --check .
+      - name: Install locked dependencies
+        run: make setup
+      - name: Build production interface
+        run: make build-web
+      - name: Check source and unit tests
+        run: make check
       - name: Inspect synthetic course
         run: uv run --locked anki-generator inspect fixtures/example-course --output outputs/example
       - name: Install test browser
         run: pnpm --dir frontend exec playwright install --with-deps chromium
       - name: Browser workflow with offline provider
-        run: |
-          uv run --locked uvicorn tests.browser_app:create_browser_app --factory --host 127.0.0.1 --port 8766 &
-          backend_pid=$!
-          trap 'kill "$backend_pid" 2>/dev/null || true' EXIT
-          uv run --locked python - <<'PY'
-          import time
-          import urllib.request
-          for attempt in range(100):
-              try:
-                  urllib.request.urlopen('http://127.0.0.1:8766/api/health', timeout=1)
-                  break
-              except OSError:
-                  time.sleep(0.1)
-          else:
-              raise SystemExit('Test backend did not start')
-          PY
-          pnpm --dir frontend test:e2e
+        run: make test-browser

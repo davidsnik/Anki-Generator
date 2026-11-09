@@ -142,9 +142,9 @@ test('a local learner can create a course, import role-aware sources, generate, 
   await page.screenshot({ path: '/tmp/anki-ui-inspector.png', fullPage: false });
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   await page.getByRole('link', { name: 'Exports', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Generate & download APKG' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Save Anki package (.apkg)' })).toBeEnabled();
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Generate & download APKG' }).click();
+  await page.getByRole('button', { name: 'Save Anki package (.apkg)' }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.apkg$/);
   await expect(page.locator('.export-history tbody tr').first()).toBeVisible();
@@ -162,9 +162,7 @@ test('responsive navigation and dark theme remain usable on mobile', async ({ pa
   await page.goto('/');
   await page.getByRole('button', { name: 'Toggle navigation', exact: true }).click();
   await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await expect(
-    page.getByRole('heading', { name: 'A workspace that thinks with you.' }),
-  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Toggle navigation', exact: true })).toBeVisible();
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > window.innerWidth,

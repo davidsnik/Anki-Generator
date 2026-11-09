@@ -33,6 +33,16 @@ class GenerationCriteria(InputModel):
         return values
 
 
+def validate_model_identifier(value: str) -> str:
+    if (
+        not value.strip()
+        or len(value) > 200
+        or any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in value)
+    ):
+        raise ValueError("Invalid model identifier")
+    return value
+
+
 class StageModels(InputModel):
     interpretation: str = "gpt-6-astra"
     knowledge: str = "gpt-6-astra"
@@ -44,9 +54,7 @@ class StageModels(InputModel):
     @field_validator("*")
     @classmethod
     def reasonable_id(cls, value: str) -> str:
-        if not value.strip() or len(value) > 200 or any(char.isspace() for char in value):
-            raise ValueError("Invalid model identifier")
-        return value
+        return validate_model_identifier(value)
 
 
 class RoleInfluence(InputModel):

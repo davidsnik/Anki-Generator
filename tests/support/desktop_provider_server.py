@@ -81,11 +81,12 @@ class ControlledResponsesServer(AbstractContextManager):
                             "object": "list",
                             "data": [
                                 {
-                                    "id": "gpt-6-astra",
+                                    "id": identifier,
                                     "object": "model",
                                     "created": 0,
                                     "owned_by": "synthetic-test-fixture",
                                 }
+                                for identifier in ("gpt-6-astra", "text-embedding-3-small")
                             ],
                         },
                     )

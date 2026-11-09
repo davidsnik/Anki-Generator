@@ -3,6 +3,27 @@
 The local application keeps course sources, extraction, corrections, cards, reviews
 and evaluation records separately. A model verdict is not an independent human label.
 
+## Get started and choose models
+
+Create a course and import files or a folder. Suggested educational roles remain
+editable; select several documents in the source library to apply a role together.
+Local extraction, source inspection, manual cards and export work without a key.
+Generation first checks for documents, a configured key and a usable model setup,
+then requires the existing external-processing consent.
+
+Settings discovers the account's models automatically after key setup. Search the
+**Default processing model** selector to choose one model for all six stages, or
+expand **Choose different models by stage** to retain separate choices. Use
+**Refresh models** to bypass the account-list cache and **Check model setup** to
+check a draft before saving. Custom identifiers remain available under Advanced;
+unknown capabilities are reported explicitly. See [model discovery](models.md).
+
+Study presets and Quiet/Balanced/More parallel work cover common preferences.
+Extraction limits, prompts and other technical controls remain under advanced
+sections. Settings keeps unsaved drafts when switching pages; the save bar and
+`Ctrl`/`⌘` + `S` save them. Background updates do not replace a draft. API-key
+storage and connection testing have separate feedback from preference saving.
+
 ## Correct a transcription or select visual evidence
 
 Open a course's **Documents** tab and choose **Correct or crop** on a source.
@@ -15,13 +36,16 @@ extraction and correction history remain available.
 
 Use **Select region** and drag a rectangle over the original page. Zoom changes
 presentation; the saved bounds remain in original page coordinates. **Pan** and
-scrolling allow inspection of wide or tall pages. Save the crop at the chosen DPI,
+scrolling allow inspection of wide or tall pages. Choose a readable image-quality
+preset, or expand advanced crop settings for DPI and exact geometry. Save the crop,
 then attach it to a card or concept. Card attachment creates a new human revision
 and invalidates earlier checks. The workbench supports local extraction of the
 selected page or vision interpretation of the page/crop; vision requires visible
 consent. Preserved human corrections are not replaced by default. Sources without
 faithful original rendering cannot provide a genuine crop; the server reports this
 limitation instead of manufacturing a source image.
+Closing the workbench or changing pages asks before discarding an unsaved
+transcription correction. Saved corrections remain in history.
 
 ## Review a large card collection
 
@@ -33,6 +57,13 @@ Selections can span pages. Bulk approval, rejection, attention flags, tags, topi
 changes and regeneration all show the selected count and require a rationale.
 The backend rejects stale selections. External regeneration additionally requires
 consent, and replacing human edits has its own explicit permission.
+
+Quick filters expose all cards, awaiting review, needs attention and approved
+cards. **Clear filters** also recovers from an empty search. Filter, search and
+view choices remain separate for each course for the browser/window session;
+explicit bulk selections are not restored. The inspector shows position and
+disables navigation at the ends. Card edits ask before discarding a changed draft;
+`Ctrl`/`⌘` + `Enter` saves a valid card.
 
 In the card inspector use `←` / `→` for previous/next, `Space` or `f` to flip,
 `a` to approve, `r` to reject, `e` to edit, `g` to regenerate, `x` to select and
@@ -125,8 +156,8 @@ conflicting task for the same course.
 
 Open **Tasks** from the main navigation or the header's running/queued indicator.
 The default allows two course tasks, four shared OpenAI requests, two local
-operations and two OpenAI requests per task. Settings → **Concurrent courses &
-shared resources** changes those independent limits, with optional per-model
+operations and two OpenAI requests per task. Settings → **Processing speed** offers
+presets; **Customize shared resource limits** changes those independent limits, with optional per-model
 caps. Save preferences to apply them; lowering a limit drains existing work
 rather than terminating requests. Per-pipeline worker and context settings remain
 additional constraints. Changes to models and course criteria affect future

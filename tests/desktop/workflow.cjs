@@ -264,7 +264,7 @@ async function main() {
     }, exportPath);
     await page.getByRole("link", { name: "Exports", exact: true }).click();
     await page
-      .getByRole("button", { name: "Generate & download APKG", exact: true })
+      .getByRole("button", { name: "Save Anki package (.apkg)", exact: true })
       .click();
     await expect
       .poll(async () => {

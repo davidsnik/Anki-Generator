@@ -24,7 +24,10 @@ export function DesktopEvents() {
           previous ? { ...previous, last_download: file } : previous,
         );
         void client.invalidateQueries({ queryKey: ['desktop', 'info'] });
-        toast(`${file.filename} saved. Open it or show its folder from desktop settings.`);
+        toast(`${file.filename} saved.`, 'success', {
+          label: 'Open saved file',
+          to: '/settings#desktop-diagnostics',
+        });
       }),
     ];
     return () => subscriptions.forEach((stop) => stop());
@@ -69,10 +72,8 @@ export function DesktopPanel() {
               <dd>Anki Generator {data.application_version}</dd>
             </div>
             <div>
-              <dt>Backend</dt>
-              <dd>
-                {data.backend_version || 'Starting'} · {data.status}
-              </dd>
+              <dt>Processing service</dt>
+              <dd>{data.status === 'ready' ? 'Ready' : data.message || 'Starting…'}</dd>
             </div>
             <div>
               <dt>Course data</dt>

@@ -165,6 +165,11 @@ describe('accurate independent task controls', () => {
     let posts = 0;
     const bodies: Json[] = [];
     const fetch = vi.fn(async (_url: string, options?: RequestInit) => {
+      if (_url.endsWith('/settings/models/validate')) return response({ valid: true, issues: [] });
+      if (_url.endsWith('/settings'))
+        return response({ key_status: { configured: true }, models: {}, processing: {} });
+      if (_url.endsWith('/documents'))
+        return response([{ id: 'document-a', filename: 'Lecture.pdf' }]);
       if (options?.method === 'POST') {
         bodies.push(JSON.parse(String(options.body)));
         posts++;
@@ -190,6 +195,9 @@ describe('accurate independent task controls', () => {
       screen.getByLabelText(
         'I approve sending this course material to OpenAI for the processing described above.',
       ),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Start processing' })).toBeEnabled(),
     );
     fireEvent.click(screen.getByRole('button', { name: 'Start processing' }));
     await screen.findByText('Temporary network failure');
@@ -268,6 +276,7 @@ it('edits distinct global and per-model concurrency limits without silently savi
     );
   }
   wrap(<Harness />);
+  fireEvent.click(screen.getByText('Customize shared resource limits'));
   fireEvent.change(screen.getByLabelText('Simultaneous course tasks'), { target: { value: '3' } });
   fireEvent.change(screen.getByLabelText('Shared OpenAI request limit'), {
     target: { value: '5' },
@@ -277,9 +286,11 @@ it('edits distinct global and per-model concurrency limits without silently savi
   });
   fireEvent.click(screen.getByText('Optional limits for specific models'));
   fireEvent.click(screen.getByRole('button', { name: 'Add model limit' }));
-  fireEvent.change(screen.getByLabelText('Concurrency model 1'), {
+  fireEvent.click(screen.getByRole('button', { name: 'Advanced: custom model' }));
+  fireEvent.change(screen.getByLabelText('Custom model ID'), {
     target: { value: 'gpt-6-astra' },
   });
+  fireEvent.click(screen.getByRole('button', { name: 'Use model' }));
   fireEvent.change(screen.getByLabelText('Model concurrency 1'), { target: { value: '2' } });
   expect(JSON.parse(screen.getByTestId('value').textContent!)).toMatchObject({
     max_concurrent_jobs: 3,
@@ -289,6 +300,25 @@ it('edits distinct global and per-model concurrency limits without silently savi
     per_model_concurrency: { 'gpt-6-astra': 2 },
   });
   expect(screen.getByText(/Save preferences to apply/)).toBeVisible();
+});
+
+it('applies understandable speed presets while preserving custom model caps', () => {
+  const change = vi.fn();
+  wrap(
+    <SchedulerPreferences
+      value={{ per_model_concurrency: { 'gpt-6-astra': 1 } }}
+      onChange={change}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: /Quiet/ }));
+  expect(change).toHaveBeenCalledWith(
+    expect.objectContaining({
+      max_concurrent_jobs: 1,
+      api_concurrency: 2,
+      local_concurrency: 1,
+      per_model_concurrency: { 'gpt-6-astra': 1 },
+    }),
+  );
 });
 
 class FakeChannel {

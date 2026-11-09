@@ -18,8 +18,9 @@ import {
   Square,
   Workflow,
 } from 'lucide-react';
-import type { Course, Document, Json, Run, Stage } from '../services/types';
+import type { Course, Document, Json, KeyStatus, Run, Stage } from '../services/types';
 import { api, list, write } from '../services/api';
+import type { ModelValidation } from '../services/models';
 import {
   Badge,
   Empty,
@@ -54,6 +55,37 @@ export function RunDialog({
     queryKey: ['documents', course.id],
     queryFn: async () => list<Document>(await api(`/courses/${course.id}/documents`)),
   });
+  const settings = useQuery({
+    queryKey: ['run-settings'],
+    queryFn: () => api<Json & { key_status: KeyStatus }>('/settings'),
+    enabled: !local,
+    staleTime: 0,
+  });
+  const modelCheck = useQuery({
+    queryKey: [
+      'run-model-preflight',
+      course.id,
+      settings.data?.models,
+      settings.data?.reasoning_effort,
+      settings.data?.processing,
+    ],
+    queryFn: () => write<ModelValidation>('/settings/models/validate'),
+    enabled: !local && !!settings.data?.key_status?.configured,
+    retry: false,
+    staleTime: 0,
+  });
+  const hasDocuments = !!documents.data?.length;
+  const ready =
+    hasDocuments &&
+    !documents.isPending &&
+    !documents.isError &&
+    (local ||
+      (!settings.isPending &&
+        !settings.isError &&
+        !!settings.data?.key_status?.configured &&
+        modelCheck.data?.valid === true &&
+        !modelCheck.isFetching &&
+        !modelCheck.isError));
   const start = useMutation({
     mutationFn: () =>
       write<Run>(`/courses/${course.id}/runs`, {
@@ -86,8 +118,90 @@ export function RunDialog({
             ? 'Deepen this topic'
             : 'Connect your course. Create your deck.'
       }
-      onClose={onClose}
+      onClose={() => {
+        if (!start.isPending) onClose();
+      }}
     >
+      <section className="run-readiness" aria-label="Processing readiness" aria-live="polite">
+        {documents.isPending ? (
+          <p>Checking course documents…</p>
+        ) : documents.error ? (
+          <ErrorPanel error={documents.error} retry={() => documents.refetch()} />
+        ) : !hasDocuments ? (
+          <div className="warning-note">
+            <FileText size={18} />
+            <span>
+              Import at least one source document first.{' '}
+              <Link to={`/courses/${course.id}/documents`} onClick={onClose}>
+                Open Documents
+              </Link>
+            </span>
+          </div>
+        ) : (
+          <p>
+            <Check size={15} /> {documents.data!.length} source document
+            {documents.data!.length === 1 ? '' : 's'} ready
+          </p>
+        )}
+        {!local &&
+          (settings.isPending ? (
+            <p>Checking API configuration…</p>
+          ) : settings.error ? (
+            <ErrorPanel error={settings.error} retry={() => settings.refetch()} />
+          ) : !settings.data?.key_status?.configured ? (
+            <div className="warning-note">
+              <ShieldCheck size={18} />
+              <span>
+                Add your OpenAI API key to generate cards.{' '}
+                <Link to="/settings" onClick={onClose}>
+                  Open Settings
+                </Link>
+                . You can still extract documents locally.
+              </span>
+            </div>
+          ) : modelCheck.isFetching ? (
+            <p>
+              <LoaderCircle size={15} className="spin" /> Checking saved model access and
+              compatibility…
+            </p>
+          ) : modelCheck.error ? (
+            <ErrorPanel error={modelCheck.error} retry={() => modelCheck.refetch()} />
+          ) : (
+            modelCheck.data && (
+              <div className={modelCheck.data.valid ? 'field-help' : 'warning-note'}>
+                <ShieldCheck size={16} />
+                <div>
+                  <strong>
+                    {modelCheck.data.valid
+                      ? 'Model configuration checked'
+                      : 'Update your model configuration before starting'}
+                  </strong>
+                  {!!modelCheck.data.issues.length && (
+                    <ul>
+                      {modelCheck.data.issues.map((issue, index) => (
+                        <li key={index}>{issue.message}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {!modelCheck.data.valid && (
+                    <Link to="/settings" onClick={onClose}>
+                      Review models in Settings
+                    </Link>
+                  )}
+                  {modelCheck.data.valid && (
+                    <p>
+                      Account visibility and known capabilities checked without generating content.
+                      Actual API permissions and charges depend on your account.
+                    </p>
+                  )}
+                  <button className="text-link" onClick={() => modelCheck.refetch()}>
+                    Check again
+                  </button>
+                </div>
+              </div>
+            )
+          ))}
+      </section>
       <p className="muted">
         {local
           ? 'Extract source text and original visual regions locally. No course material is sent to OpenAI.'
@@ -155,12 +269,12 @@ export function RunDialog({
       </p>
       {start.error && <ErrorPanel error={start.error} />}
       <div className="form-actions">
-        <button className="button" onClick={onClose}>
+        <button className="button" disabled={start.isPending} onClick={onClose}>
           Cancel
         </button>
         <button
           className="button primary"
-          disabled={start.isPending || (!local && !consent)}
+          disabled={start.isPending || !ready || (!local && !consent)}
           onClick={() => start.mutate()}
         >
           <Play size={16} />

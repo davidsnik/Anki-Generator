@@ -1,12 +1,61 @@
 # Implementation verification
 
-Updated 9 November 2026. This report separates the current desktop release checks,
+Updated 9 November 2026. This report separates the current UX/development checks,
+desktop release checks,
 historical application checks, actual disposable Anki imports and validation
 that has not been performed. Controlled model responses and synthetic labels do
 not establish accuracy on unseen university courses. No live paid OpenAI evaluation
 or independently reviewed multi-subject quality result is recorded here.
 
-## Linux desktop release — 9 November 2026
+## UX, model selection and Make workflow — 9 November 2026
+
+This pass preserves the existing pipeline, concurrent scheduler, browser/CLI and
+Linux desktop distribution. It adds backend-only account model discovery,
+credential-scoped refresh/cache, documented exact-ID compatibility and custom IDs,
+preflight before creating jobs, custom embedding settings, simpler settings/presets,
+bulk source roles, saved review filters, protected drafts, clearer confirmations
+and a common Make interface. All provider data in automated checks is controlled;
+no live academic accuracy or paid model result is claimed.
+
+| Command or check | Recorded result and scope |
+| --- | --- |
+| `make check` | Passed after repairing two submission-race regressions and an obsolete test-provider setup: **471 Python tests passed / 6 optional checks skipped**, **81 frontend tests**, **17 shell tests**, Ruff lint/format, strict TypeScript, frontend/desktop formatting and shell syntax. This run predates the final custom-embedding tests; the final combined Python result is recorded separately. |
+| `make lint format-check typecheck test-frontend test-desktop` after frontend/model freeze | Passed: **179 Python files** clean/formatted, **81 frontend tests** in 14 files and **17 shell tests**. The later native draft fix adds six shell cases, recorded below. No new runtime dependency was required. |
+| `make test-browser` | **6/6 passed in 52.8 seconds** against its owned isolated host: concurrent Tasks, source/review/evaluation/restore, model/settings configuration, import/review/draft/filter UX, generation/APKG and mobile/theme navigation. The runner stopped its server and propagated earlier failures correctly. |
+| `make test-anki PYTEST_ARGS=-q` | **11 passed in 7.56 seconds**, using official Anki 26.09.4 in disposable collections. |
+| Final focused backend checks | **116 passed in 22.03 seconds**, including 32 model-discovery cases, actual SDK loopback transports, resource/API behavior, custom embedding persistence/vector dimensions and metadata access outside the SQLite writer transaction. |
+| `ANKI_TEST_FROZEN_BACKEND=/tmp/anki-ux-release/backend/anki-generator-backend uv run --locked --offline --extra anki-integration pytest -q --tb=short` | **501 passed, no skips, in 187.01 seconds**, with one existing Starlette/httpx deprecation warning. Includes the final model/custom-embedding changes, **5 actual copied frozen-backend checks** and **11 official Anki core cases**. |
+| `make help`, `make doctor ARGS=--package`, `make setup` | Passed actual help/tool detection/locked dependency setup. Missing-tool errors, argument guards, selected-tool propagation and a checkout path containing spaces were also exercised. |
+| `make clean` | Passed in an isolated disposable checkout: only fixed generated outputs were removed; data, outputs, XDG state, dependencies, desktop build metadata and an external symlink sentinel were retained. No personal workspace cleanup was performed. |
+| Actual `make dev` | Opened the visible desktop with Vite hot reload, temporary XDG data, private API, sandbox/context isolation enabled and renderer Node disabled. Graceful quit exited Make successfully and stopped its owned Vite process. Evidence: `/tmp/anki-ux-make-dev-2/`. |
+| Actual `make build PACKAGE_ARGS=--skip-checks` and `make run` | Built and launched the runnable desktop directory, with current UI, private API and sandbox retained. Graceful quit exited Make successfully. Evidence: `/tmp/anki-ux-make-run/`. Source checks were run separately; `--skip-checks` is not a claim that packaging ran them again. |
+| Unsaved desktop lifecycle regression | Actual native close initially preserved the draft but left a misleading stopping state and generic error. A native **Keep editing / Discard changes** decision now precedes shutdown. **23/23 shell tests** passed, including six new lifecycle cases. The rebuilt visible desktop passed keep-on-close/restart/reload with retained draft, ready state and same live backend; discard-on-restart replaced the backend, and discard-on-close stopped it. Relaunch retained the course without accidentally saving draft cards. No shutdown/restart errors appeared. Evidence: `/tmp/anki-desktop-unsaved-fixed-2/unsaved-close-result.json`. |
+| Final `make lint format-check typecheck test-desktop` after native lifecycle freeze | Passed Ruff lint/format (**179 files**), frontend/desktop/harness formatting, shell syntax, strict TypeScript and **23/23 desktop tests** in 2.08 seconds. Log: `/tmp/anki-ux-final-shell-checks.log`. |
+| Final `make package PACKAGE_ARGS=--skip-checks` and shell reassembly | Passed AppImage/RPM production. After the native draft fix, the shell was reassembled using the unchanged frozen backend. All **422 backend files** match byte-for-byte across the frozen build, immutable tested copy and final Electron payload. Manifest: `/tmp/anki-ux-release/backend-identity.json`. Source/test checks were executed separately. |
+| `make test-packaged APPIMAGE=/tmp/anki-ux-release/Anki-Generator.AppImage` | **All four sequential harnesses passed** on the final hash below: visible startup/local import/extraction/persistence; real-SDK controlled generation, concurrent Tasks, math/evidence/approval/APKG and checkpoint recovery; all six lifecycle/failure scenario groups; and native unsaved keep/discard/restart/reload. Sandboxing/context isolation remained enabled, renderer Node disabled and unauthenticated requests rejected. Log: `/tmp/anki-ux-final-packaged.log`; workspaces: `/tmp/anki-desktop-gui-sbFO6k`, `/tmp/anki-desktop-workflow-jcx2tf`, `/tmp/anki-desktop-lifecycle-TwwAuO`, `/tmp/anki-unsaved-gui-36zUwT`. |
+| Final Fedora RPM installation | Actual DNF install/reinstall, `rpm -V`, regular UID 1000 GUI/model-settings launch, missing-key feedback, native window rendering and graceful application/backend exit passed in an isolated Fedora 44 container. The renderer showed **NoNewPrivs=1**, **Seccomp=2**, no `--no-sandbox` and no renderer Node. Evidence: `/tmp/anki-ux-rpm-container/evidence/`. The owned container was removed after app/backend processes had exited. |
+| Rendered UI inspection | Inspected first-use, model/settings search and validation, light/dark/narrow layouts, review/filter/editor controls, source correction/presets and mobile layouts. Browser workflows reported no page errors. Local evidence includes `/tmp/anki-ux-models-settings-*.png` and `/tmp/anki-ux-review-*.png`. |
+
+Current release artifacts (also copied outside the checkout to `/tmp/anki-ux-release`):
+
+| Artifact | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `dist/desktop/Anki-Generator-0.1.0-x86_64.AppImage` | 227058857 | `bd824948df047a14e7915fdebe55ec7bc3da31275638eb8d279f8ccb39217dc7` |
+| `dist/desktop/Anki-Generator-0.1.0-x86_64.rpm` | 200486785 | `6f90f9957775deb04157d45cdd56750b4a47c0b1ea2690f753c055cebd3d34e2` |
+
+The repository and copied hashes match; `dist/desktop/SHA256SUMS` records them.
+Final `git diff --check` and **107 local links across 27 Markdown files** passed;
+private/generated paths remain ignored and no Git commit was made.
+Final packaged Settings, mathematical/source editing and concurrent Tasks images
+were inspected. Native choice/save/open/external-link tests use controlled dialog
+or dispatch stubs; they establish application boundaries rather than manual OS
+dialog acceptance or receipt in another application. AppImage used standard
+extract-and-run because `/dev/fuse` is absent; the Chromium sandbox stayed enabled.
+No live paid model-quality result, broader Linux/platform compatibility, mounted
+FUSE launch or OS notification receipt is implied. Earlier release results below
+describe their recorded baseline rather than the newer artifact.
+
+## Previous Linux desktop release — 9 November 2026
 
 The final distribution bundles Electron **45.2.3** and a one-folder Python backend,
 built with Electron Builder **26.18.0** and PyInstaller **6.22.3**. The release was copied
@@ -238,8 +287,9 @@ explicit reconciliation before affected APKG notes can export.
   desktop GUI/mobile visual checks and unusual note/deck settings are outstanding.
 - Expand diverse full-course, difficult handwriting/Office and real concurrency
   workloads beyond the controlled engineering profiles.
-- OS keyring and optional Office isolation depend on the host. Packaged Secret
-  Service writes, broader Linux/glibc bases, mounted-FUSE startup, native KDE launcher
+- OS keyring and optional Office isolation depend on the host. The earlier
+  isolated packaged Secret Service probe passed; other credential stores,
+  broader Linux/glibc bases, mounted-FUSE startup, native KDE launcher
   grouping and notification receipt remain unestablished. Fedora RPM and AppImage
   extract-and-run checks are recorded above; native Windows/macOS packaging remains work.
 - Image occlusion, AnkiConnect/synchronization, a standalone spaced-repetition

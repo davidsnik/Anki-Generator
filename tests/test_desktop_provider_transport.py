@@ -11,6 +11,7 @@ def test_desktop_fixture_uses_real_responses_and_embedding_sdk(monkeypatch):
         monkeypatch.setenv("OPENAI_BASE_URL", f"{server.origin}/v1/")
         provider = OpenAIProvider(TEST_KEY)
         try:
+            assert provider.models() == ["gpt-6-astra", "text-embedding-3-small"]
             assert provider.test()["connected"]
             result = provider.structured(
                 "knowledge",

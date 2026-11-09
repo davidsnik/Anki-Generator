@@ -3,6 +3,10 @@
 set -euo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_root"
+source "$project_root/scripts/toolchain.sh"
+uv_command="${UV:-uv}"
+pnpm_command="${PNPM:-pnpm}"
+node_command="${NODE:-node}"
 hmr=false
 shell_arguments=()
 for argument in "$@"; do
@@ -15,28 +19,19 @@ for argument in "$@"; do
     *) shell_arguments+=("$argument") ;;
   esac
 done
-for tool in uv node pnpm; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "Development requirement missing: $tool. See docs/desktop.md." >&2
-    exit 1
-  fi
-done
-uv sync --locked
-pnpm --dir frontend install --frozen-lockfile
-pnpm --dir desktop install --frozen-lockfile
-pnpm --dir desktop exec install-electron
-pnpm --dir frontend run build
-python_command="$(uv run --no-sync python -c 'import sys; print(sys.executable)')"
+./scripts/workflow.sh setup
+./scripts/workflow.sh build-web
+python_command="$("$uv_command" run --no-sync python -c 'import sys; print(sys.executable)')"
 # Editors may themselves be Electron processes and export Node-only startup flags.
 unset ELECTRON_RUN_AS_NODE NODE_OPTIONS
-electron_command="$(node -p 'require("./desktop/node_modules/electron")')"
+electron_command="$("$node_command" -p 'require("./desktop/node_modules/electron")')"
 if ! $hmr; then
   exec "$electron_command" "$project_root/desktop" --backend-command "$python_command" \
     --backend-arg=-m --backend-arg=anki_generator.desktop "${shell_arguments[@]}"
 fi
 
 # Fail on an occupied development port rather than attaching to another service.
-node - <<'JS'
+"$node_command" - <<'JS'
 const net = require('node:net');
 const server = net.createServer();
 server.once('error', () => {
@@ -58,10 +53,10 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-node "$project_root/frontend/node_modules/vite/bin/vite.js" "$project_root/frontend" \
+"$node_command" "$project_root/frontend/node_modules/vite/bin/vite.js" "$project_root/frontend" \
   --host 127.0.0.1 --port 5173 --strictPort &
 frontend_pid=$!
-node --input-type=module - "$frontend_pid" <<'JS'
+"$node_command" --input-type=module - "$frontend_pid" <<'JS'
 const pid = Number(process.argv[2]);
 const deadline = Date.now() + 30_000;
 while (Date.now() < deadline) {

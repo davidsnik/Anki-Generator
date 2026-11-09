@@ -135,11 +135,11 @@ it('bulk actions submit exact explicit IDs and selected revision guards after ra
   );
   fireEvent.click(screen.getByRole('button', { name: 'Review bulk action' }));
   expect(fetch).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: 'Confirm selected action' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Approve selected cards' })).toBeDisabled();
   fireEvent.change(screen.getByLabelText('Reason / regeneration guidance'), {
     target: { value: 'Checked both original sources.' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Confirm selected action' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Approve selected cards' }));
   await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
   expect(JSON.parse(String(fetch.mock.calls[0][1]!.body))).toMatchObject({
     card_ids: ['one', 'two'],

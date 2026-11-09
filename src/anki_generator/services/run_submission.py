@@ -9,6 +9,7 @@ from anki_generator.api.courses import ensure_idle
 from anki_generator.database.entities import Card, Concept, Course, Document, Run
 from anki_generator.domain import RunInput
 from anki_generator.processing.state import digest
+from anki_generator.services.model_discovery import preflight_run
 from anki_generator.services.records import require, run_view
 from anki_generator.services.settings import ApplicationSettings, get_settings
 from anki_generator.services.task_events import add_event
@@ -57,6 +58,20 @@ def submit_run(
     }
     if set(overrides) - allowed:
         raise ValueError("Run overrides contain an unsupported setting")
+    for name, value in overrides.items():
+        settings[name] = {**settings[name], **value} if isinstance(value, dict) else value
+    effective_settings = ApplicationSettings.model_validate(settings).model_dump()
+    with rt.sessions() as session:
+        require(session, Course, course_id)
+        # This preliminary check must stay read-only: ensure_idle acquires the
+        # SQLite writer and belongs after BEGIN IMMEDIATE plus the idempotency
+        # recheck below. Otherwise a simultaneous repeat can be rejected before
+        # it gets a chance to reuse the first durable submission.
+        if not session.scalar(select(Document.id).where(Document.course_id == course_id).limit(1)):
+            raise ValueError("Import course documents before starting processing")
+    # Check access/capabilities before acquiring SQLite's writer or creating a
+    # durable job. This metadata-only request sends no course material.
+    preflight_run(rt, effective_settings, values.mode)
     with rt.sessions.begin() as session:
         # Serialize only the short submission transaction, including the check.
         # Network calls and extraction never occur while this writer is held.
@@ -74,8 +89,8 @@ def submit_run(
         course = require(session, Course, course_id)
         ensure_idle(session, course_id)
         settings["criteria"] = course.criteria or settings["criteria"]
-        for name, value in overrides.items():
-            settings[name] = {**settings[name], **value} if isinstance(value, dict) else value
+        if "criteria" in overrides:
+            settings["criteria"] = {**settings["criteria"], **overrides["criteria"]}
         effective = ApplicationSettings.model_validate(settings).model_dump()
         effective["language"] = course.language
         effective["course_snapshot"] = {

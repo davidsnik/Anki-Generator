@@ -30,11 +30,13 @@ and [backend protocol](docs/desktop-backend.md). Preserve browser development an
 
 ## Development
 
-- Use uv and the Python lockfile; pnpm and the frontend lockfile. See README for setup.
+- Use `make help` for the common workflow, `make setup` for locked dependencies and
+  `make dev` for desktop hot reload. Use uv and the Python lockfile; pnpm and both
+  JavaScript lockfiles. See [development](docs/development.md) for focused targets.
 - Test meaningful behavior and failures offline with temporary data. Production must
   never silently substitute test responses. Browser test providers live under tests/.
-- Run uv run pytest, uv run ruff check ., uv run ruff format --check ., and relevant
-  pnpm frontend build/unit/browser checks. Inspect rendered UI after meaningful UI changes.
+- Run `make check` and relevant `make build-web`/`make test-browser` checks. Focused
+  Python/frontend commands remain available. Inspect rendered UI after meaningful UI changes.
 - Diagnose failures and rerun affected checks. Never claim unexecuted checks passed.
   Distinguish controlled-provider verification from live provider/Anki validation.
 - Packaging changes require copied-distribution tests outside the checkout, actual

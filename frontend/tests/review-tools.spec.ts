@@ -137,7 +137,7 @@ test('corrections, coordinate crops, bulk revisions, blind evaluation and scalab
     .getByLabel('Reason / regeneration guidance')
     .fill('Explicit synthetic grouping for the controlled integration test.');
   await page.getByLabel('Add tags').fill('geometry,exam');
-  await page.getByRole('button', { name: 'Confirm selected action', exact: true }).click();
+  await page.getByRole('button', { name: 'Update selected tags', exact: true }).click();
   await expect(page.locator('.toast')).toContainText('Bulk action applied');
   const updated = await (await page.request.get(`/api/cards/${one.id}`)).json();
   expect(updated.tags).toContain('geometry');
@@ -146,7 +146,10 @@ test('corrections, coordinate crops, bulk revisions, blind evaluation and scalab
   await page.getByRole('button', { name: 'Compare previous revisions' }).click();
   await expect(page.locator('.revision-field.changed').first()).toBeVisible();
   await page.getByRole('button', { name: 'Restore selected revision', exact: true }).click();
-  await page.getByRole('button', { name: 'Confirm action', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Restore earlier content as a new revision?' })
+    .getByRole('button', { name: 'Restore selected revision', exact: true })
+    .click();
   await expect(page.locator('.toast')).toContainText('Earlier content restored');
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   await page.goto('/evaluation');
@@ -206,6 +209,7 @@ test('corrections, coordinate crops, bulk revisions, blind evaluation and scalab
   });
   expect(seed.ok()).toBe(true);
   await page.goto(`${coursePath}/cards`);
+  await page.getByRole('button', { name: 'All cards', exact: true }).click();
   await expect(page.locator('.card-tile')).toHaveCount(24);
   await expect(page.locator('.pagination')).toContainText('1,502');
   await page.getByRole('button', { name: 'Inspect & review' }).last().click();
@@ -250,6 +254,7 @@ test('corrections, coordinate crops, bulk revisions, blind evaluation and scalab
   expect((await afterRestore.json()).total).toBe(1502);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${coursePath}/cards`);
+  await page.getByRole('button', { name: 'All cards', exact: true }).click();
   await expect(page.locator('.card-tile')).toHaveCount(24);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,

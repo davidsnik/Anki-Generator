@@ -3,6 +3,7 @@
 set -euo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$project_root"
+source "$project_root/scripts/toolchain.sh"
 if ! command -v rpmbuild >/dev/null 2>&1; then
   echo "RPM packaging requires rpm-build (rpmbuild)." >&2
   exit 1
@@ -12,7 +13,7 @@ if [[ ! -x "$payload/anki-generator" || ! -x "$payload/resources/backend/anki-ge
   echo "Build the Electron directory payload before packaging the RPM." >&2
   exit 1
 fi
-version="$(node -p 'require("./desktop/package.json").version')"
+version="$("${NODE:-node}" -p 'require("./desktop/package.json").version')"
 architecture="$(rpm --eval '%{_arch}')"
 glibc_version="$(getconf GNU_LIBC_VERSION)"
 glibc_version="${glibc_version#glibc }"

@@ -66,6 +66,16 @@ export function BulkReview({
   const [topic, setTopic] = useState('');
   const [consent, setConsent] = useState(false);
   const [overwrite, setOverwrite] = useState(false);
+  const actionLabel = (
+    {
+      approve: 'Approve selected cards',
+      reject: 'Reject selected cards',
+      pending: 'Mark selected for review',
+      regenerate: 'Regenerate selected cards',
+      tags: 'Update selected tags',
+      topic: 'Change selected topic',
+    } as Record<string, string>
+  )[action];
   const client = useQueryClient();
   const toast = useToast();
   const mutation = useMutation({
@@ -107,7 +117,13 @@ export function BulkReview({
         <select
           aria-label="Bulk card action"
           value={action}
-          onChange={(e) => setAction(e.target.value)}
+          disabled={mutation.isPending}
+          onChange={(e) => {
+            setAction(e.target.value);
+            setReason('');
+            setConsent(false);
+            setOverwrite(false);
+          }}
         >
           {[
             ['approve', 'Approve selected'],
@@ -124,23 +140,25 @@ export function BulkReview({
         </select>
         <button
           className="button primary small"
-          disabled={selection.size > 500}
+          disabled={selection.size > 500 || mutation.isPending}
           onClick={() => setConfirm(true)}
         >
           Review bulk action
         </button>
-        <button className="text-link" onClick={onClear}>
+        <button className="text-link" disabled={mutation.isPending} onClick={onClear}>
           Clear selection
         </button>
       </div>
       {confirm && (
         <Modal
-          title={`${human(action)} ${selection.size} selected revisions?`}
-          onClose={() => setConfirm(false)}
+          title={`${actionLabel} (${selection.size})?`}
+          onClose={() => {
+            if (!mutation.isPending) setConfirm(false);
+          }}
         >
           <p className="muted">
-            Only the IDs explicitly selected in the browser are affected. If any revision changed
-            since selection, the backend rejects the stale operation.
+            Only the cards you selected will change. If a card was edited after you selected it,
+            this action stops so you can review its latest version.
           </p>
           <label>
             Reason / regeneration guidance
@@ -218,7 +236,11 @@ export function BulkReview({
             </ul>
           </details>
           <div className="form-actions">
-            <button className="button" onClick={() => setConfirm(false)}>
+            <button
+              className="button"
+              disabled={mutation.isPending}
+              onClick={() => setConfirm(false)}
+            >
               Cancel
             </button>
             <button
@@ -229,7 +251,7 @@ export function BulkReview({
               onClick={() => mutation.mutate()}
             >
               <CheckCheck size={15} />
-              Confirm selected action
+              {mutation.isPending ? 'Applying…' : actionLabel}
             </button>
           </div>
         </Modal>
@@ -351,7 +373,12 @@ export function RevisionComparison({ card, revisions }: { card: Card; revisions:
         <Confirm
           danger={false}
           title="Restore earlier content as a new revision?"
-          onClose={() => setConfirm(false)}
+          confirmLabel="Restore selected revision"
+          cancelLabel="Keep current revision"
+          pending={restore.isPending}
+          onClose={() => {
+            if (!restore.isPending) setConfirm(false);
+          }}
           onConfirm={() => restore.mutate()}
         >
           This explicitly restores the selected snapshot’s question, answer, explanation, note type,

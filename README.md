@@ -29,7 +29,7 @@ paths, native controls, troubleshooting and builds. The dated
 [verification report](docs/verification.md) records which packaged checks ran.
 Linux/Fedora KDE is the initial target; Windows/macOS packaging remains future work.
 
-## Browser installation and development
+## Development and browser mode
 
 Prerequisites: [uv](https://docs.astral.sh/uv/getting-started/installation/),
 Node.js 24 LTS (or 22.13+) and pnpm. uv manages Python 3.12;
@@ -37,8 +37,24 @@ the frontend pins its package manager. LibreOffice and bubblewrap are optional
 system packages for isolated DOCX/PPTX rendering; native extraction remains
 available when the engine or its sandbox is unavailable.
 
-    ./install.sh
-    ./run.sh
+```sh
+make doctor
+make setup
+make dev
+```
+
+The root Makefile is the common development interface. `make dev` opens the desktop
+window with frontend hot reload; restart the processing service from Settings after
+Python changes. `make build` creates a runnable desktop directory, `make run` opens
+it, and `make package` produces AppImage/RPM releases. See `make help` and the
+[development guide](docs/development.md) for all targets and Fedora prerequisites.
+
+For the browser interface:
+
+```sh
+make build-web
+make run-browser
+```
 
 Installation uses committed Python and frontend lockfiles and builds the interface.
 run.sh starts the backend/worker at http://127.0.0.1:8765, serves the built frontend,
@@ -51,19 +67,19 @@ network connection and incurs API charges.
     ./run.sh --data-directory /path/to/private/workspace
     ./dev.sh
 
-Desktop development is available through `./scripts/dev-desktop.sh`; use
-`./scripts/dev-desktop.sh --hmr` for managed frontend hot reload. Restart the
-processing service from Settings after Python changes. Release builds use
-`./scripts/build-desktop.sh`. See the desktop guide before changing packaging.
+Legacy `./install.sh`, `./run.sh`, `./dev.sh` and focused packaging scripts remain
+available. See the desktop guide before changing packaging.
 
-Development runs the backend on :8000 and Vite on :5173 with live reload. Default
-data lives in data/app/ in this checkout. Stop the application before moving its
+`make dev-browser` runs the browser backend on :8000 and Vite on :5173 with live
+reload. Browser-mode data lives in data/app/ in this checkout; desktop development
+uses the same XDG paths as the installed desktop app unless explicitly overridden.
+Stop the application before moving its
 data directory. ANKI_GENERATOR_DATA_DIR is an optional launch override; regular
 application settings are available in the GUI.
 
 ## Your first course
 
-1. In onboarding or Settings, enter an OpenAI key and test the selected model.
+1. In onboarding or Settings, enter an OpenAI key, choose a model and test the connection.
    Session-only storage is always available; secure persistence is offered only
    when the OS credential store is usable. Keys never enter SQLite.
 2. Create a course and choose its deck name, language and generation preferences.
@@ -83,6 +99,12 @@ application settings are available in the GUI.
    then export Anki, JSON or CSV. Anki export requires human approval
    and blocks failed/duplicate candidates. A human can approve an otherwise
    unverified manual card with an explicit rationale; it remains unverified by models.
+
+Settings discovers the models available to your account and offers searchable
+choices, refresh and a configuration check before generation. Most users can keep
+the default for all stages; advanced choices retain per-stage overrides and custom
+identifiers. Unknown capabilities remain explicitly unverified. See
+[model selection and compatibility](docs/models.md).
 
 The Evaluation workspace maintains versioned reference datasets, source-linked
 annotations, blind judgments and reproducible paired comparisons. Reports separate
@@ -139,14 +161,17 @@ directly. Read [Anki export behavior](docs/anki-export.md) before importing upda
 
 ## Develop and verify
 
-    uv sync --locked
-    uv run --locked pytest
-    uv run --locked ruff check .
-    uv run --locked ruff format --check .
-    pnpm --dir frontend install --frozen-lockfile
-    pnpm --dir frontend run build
-    pnpm --dir frontend test
-    pnpm --dir frontend test:e2e
+```sh
+make setup
+make check
+make build-web
+pnpm --dir frontend exec playwright install chromium
+make test-browser
+```
+
+`make test-backend`, `make test-frontend` and `make test-desktop` run focused suites;
+`make format` applies source formatting. `make clean` removes generated build/test
+outputs while preserving application data, credentials and development dependencies.
 
 Tests use temporary storage and an explicitly injected deterministic provider.
 Production has no simulated generation fallback. Automated tests require no live

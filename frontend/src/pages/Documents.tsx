@@ -64,6 +64,9 @@ export function DocumentsPage({ course }: { course: Course }) {
   const [workbench, setWorkbench] = useState<Document | null>(null);
   const [editing, setEditing] = useState<Document | null>(null);
   const [deleting, setDeleting] = useState<Document | null>(null);
+  const [selectedDocuments, setSelectedDocuments] = useState<Set<string>>(new Set());
+  const [batchRole, setBatchRole] = useState('lecture');
+  const [batchError, setBatchError] = useState('');
   const documents = useQuery({
     queryKey: ['documents', course.id],
     queryFn: async () => list<Document>(await api(`/courses/${course.id}/documents`)),
@@ -116,6 +119,34 @@ export function DocumentsPage({ course }: { course: Course }) {
       client.invalidateQueries();
       setDeleting(null);
       toast('Source document removed.');
+    },
+  });
+  const categorize = useMutation({
+    mutationFn: async () => {
+      const ids = Array.from(selectedDocuments);
+      const failed: string[] = [];
+      let message = '';
+      for (const id of ids) {
+        try {
+          await write(`/documents/${id}`, { category: batchRole }, 'PATCH');
+        } catch (error) {
+          failed.push(id);
+          message ||= error instanceof Error ? error.message : 'The document could not be updated.';
+        }
+      }
+      return { failed, changed: ids.length - failed.length, message };
+    },
+    onMutate: () => setBatchError(''),
+    onSuccess: ({ failed, changed, message }) => {
+      client.invalidateQueries({ queryKey: ['documents', course.id] });
+      setSelectedDocuments(new Set(failed));
+      setBatchError(message);
+      toast(
+        failed.length
+          ? `${changed} documents updated; ${failed.length} could not be changed. Review the error below and retry.`
+          : `Role updated for ${changed} documents.`,
+        failed.length ? 'error' : 'success',
+      );
     },
   });
   const reprocess = useMutation({
@@ -221,10 +252,18 @@ export function DocumentsPage({ course }: { course: Course }) {
           <h3>Drop your course materials here</h3>
           <p>PDF, images, text, Markdown, LaTeX, DOCX, PPTX, or a ZIP with folders.</p>
           <div className="inline-actions">
-            <button className="button primary small" onClick={() => input.current?.click()}>
+            <button
+              className="button primary small"
+              disabled={mutation.isPending}
+              onClick={() => input.current?.click()}
+            >
               <File size={15} /> Choose files
             </button>
-            <button className="button small" onClick={() => folder.current?.click()}>
+            <button
+              className="button small"
+              disabled={mutation.isPending}
+              onClick={() => folder.current?.click()}
+            >
               <FolderUp size={15} />
               Upload folder
             </button>
@@ -262,7 +301,12 @@ export function DocumentsPage({ course }: { course: Course }) {
               <button
                 className="icon-button"
                 aria-label="Clear import queue"
-                onClick={() => setFiles([])}
+                disabled={mutation.isPending}
+                onClick={() => {
+                  setFiles([]);
+                  setFileRoles({});
+                  setUploadStates({});
+                }}
               >
                 <X size={18} />
               </button>
@@ -311,6 +355,10 @@ export function DocumentsPage({ course }: { course: Course }) {
                 <span>{f.webkitRelativePath || f.name}</span>
                 <select
                   aria-label={`Category for ${f.name}`}
+                  disabled={
+                    mutation.isPending ||
+                    uploadStates[f.webkitRelativePath || f.name] === 'imported'
+                  }
                   value={fileRoles[f.webkitRelativePath || f.name] || category}
                   onChange={(e) =>
                     setFileRoles((previous) => ({
@@ -391,6 +439,65 @@ export function DocumentsPage({ course }: { course: Course }) {
         </h2>
         <SearchInput value={search} onChange={setSearch} placeholder="Search documents…" />
       </div>
+      {!!documents.data?.length && (
+        <div className="document-bulk-actions">
+          <label className="check-label">
+            <input
+              type="checkbox"
+              disabled={categorize.isPending || !filtered.length}
+              checked={
+                !!filtered.length &&
+                filtered.every((document) => selectedDocuments.has(document.id))
+              }
+              onChange={(event) =>
+                setSelectedDocuments((current) => {
+                  const next = new Set(current);
+                  for (const document of filtered) {
+                    if (event.target.checked) next.add(document.id);
+                    else next.delete(document.id);
+                  }
+                  return next;
+                })
+              }
+            />
+            Select displayed documents
+          </label>
+          {!!selectedDocuments.size && (
+            <>
+              <span>{selectedDocuments.size} selected</span>
+              <label>
+                Role for selected documents
+                <select
+                  value={batchRole}
+                  disabled={categorize.isPending}
+                  onChange={(event) => setBatchRole(event.target.value)}
+                >
+                  {categories.map(([id, label]) => (
+                    <option key={id} value={id}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="button small"
+                disabled={categorize.isPending}
+                onClick={() => categorize.mutate()}
+              >
+                {categorize.isPending ? 'Updating roles…' : 'Apply role'}
+              </button>
+              <button
+                className="text-link"
+                disabled={categorize.isPending}
+                onClick={() => setSelectedDocuments(new Set())}
+              >
+                Clear document selection
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {batchError && <ErrorPanel error={new Error(batchError)} />}
       {documents.isPending ? (
         <Loading />
       ) : documents.error ? (
@@ -408,6 +515,20 @@ export function DocumentsPage({ course }: { course: Course }) {
         <div className="document-list">
           {filtered.map((document) => (
             <div className="document-row" key={document.id}>
+              <input
+                type="checkbox"
+                aria-label={`Select document ${document.filename}`}
+                disabled={categorize.isPending}
+                checked={selectedDocuments.has(document.id)}
+                onChange={() =>
+                  setSelectedDocuments((current) => {
+                    const next = new Set(current);
+                    if (next.has(document.id)) next.delete(document.id);
+                    else next.add(document.id);
+                    return next;
+                  })
+                }
+              />
               <div className={`file-icon ${document.category}`}>
                 <FileText size={23} />
               </div>
@@ -443,6 +564,7 @@ export function DocumentsPage({ course }: { course: Course }) {
                 <button
                   className="icon-button"
                   aria-label={`Preview ${document.filename}`}
+                  title="Preview source"
                   onClick={() => setPreview(document)}
                 >
                   <Image size={17} />
@@ -450,6 +572,7 @@ export function DocumentsPage({ course }: { course: Course }) {
                 <button
                   className="icon-button"
                   aria-label={`Correct or crop ${document.filename}`}
+                  title="Correct transcription or select evidence"
                   onClick={() => setWorkbench(document)}
                 >
                   <Pencil size={16} />
@@ -457,6 +580,7 @@ export function DocumentsPage({ course }: { course: Course }) {
                 <button
                   className="icon-button"
                   aria-label={`Edit ${document.filename}`}
+                  title="Edit role, authority and exercise links"
                   onClick={() => setEditing(document)}
                 >
                   <Pencil size={16} />
@@ -516,6 +640,9 @@ export function DocumentsPage({ course }: { course: Course }) {
       {deleting && (
         <Confirm
           title={`Remove ${deleting.filename}?`}
+          confirmLabel="Remove document"
+          cancelLabel="Keep document"
+          pending={del.isPending}
           onClose={() => setDeleting(null)}
           onConfirm={() => del.mutate()}
         >

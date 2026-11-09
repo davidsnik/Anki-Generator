@@ -2,14 +2,15 @@
 
 ## Offline checks
 
-    uv sync --locked
-    uv run --locked pytest
-    uv run --locked ruff check .
-    uv run --locked ruff format --check .
-    pnpm --dir frontend install --frozen-lockfile
-    pnpm --dir frontend run build
-    pnpm --dir frontend test
-    pnpm --dir frontend run format:check
+    make setup
+    make check
+    make build-web
+
+`make test-backend`, `make test-frontend` and `make test-desktop` run focused
+suites. `make lint`, `make format-check` and `make typecheck` are non-mutating;
+`make format` applies formatting. See the [development guide](development.md)
+for tool overrides, packaging and safe cleanup. Direct uv/pnpm commands remain
+available for selecting individual checks.
 
 Python tests cover original discovery/schema safety, genuine PDF/image/Office
 extraction, long-page tiles and subprocess budgets, persistence, provider failure/
@@ -18,7 +19,12 @@ course-to-Anki behavior. APKG tests inspect real ZIP/SQLite/media/templates/IDs.
 Frontend unit tests cover mathematical/cloze rendering, presets and configuration,
 coordinate inversion, typing-safe shortcuts, explicit bulk revision guards,
 semantic field diffs, transcription replacement permission, targeted retry consent,
-evaluation denominators, identity/export blocking and restore validation.
+evaluation denominators, identity/export blocking and restore validation. Model
+tests cover credential-scoped discovery/cache invalidation, exact documented
+capabilities, unknown/custom IDs, inaccessible selections, preflight before job
+creation, custom embedding dimensions and real SDK transport to a local fixture.
+Interaction tests cover combobox keyboard use, settings draft/save races,
+per-course card filters, guarded card edits and source-quality presets.
 
 Focused offline suites are also directly runnable:
 
@@ -39,12 +45,16 @@ Install the official Playwright Chromium browser once:
 
     pnpm --dir frontend exec playwright install chromium
 
-In one terminal, start the explicitly controlled test server:
+Build and run all workflows against an owned temporary test host:
+
+    make test-browser
+
+The runner selects a free loopback port, isolates data and credentials, waits for
+readiness, propagates test failures and stops its own server. Select tests with,
+for example, `make test-browser ARGS='--grep "model selection"'`.
+For manually inspecting the controlled host, use two terminals:
 
     uv run uvicorn tests.browser_app:create_browser_app --factory --host 127.0.0.1 --port 8766
-
-In a second terminal:
-
     pnpm --dir frontend test:e2e
 
 The test host uses temporary SQLite/storage and controlled diagnostics/generation;
@@ -57,7 +67,11 @@ Test-only diagnostics and 1,500-card bulk fixture insertion exist only in
 Browser tests create courses, assign
 roles, upload sources, extract, configure a test key, confirm processing, browse/
 edit/review source-linked mathematics and export. Responsive/theme checks are separate.
-The additional evidence/review workflow uses the deliberately wrong invisible OCR
+Model/settings workflows cover session-key entry, connection feedback, discovery,
+search/keyboard selection, per-stage overrides, refresh/reload, draft preservation,
+custom IDs, inaccessible selections and invalid-key errors. Review UX workflows
+exercise bulk source roles, guarded edits, persisted filters, course switching and
+narrow layouts. The additional evidence/review workflow uses the deliberately wrong invisible OCR
 sign in a genuine PDF, corrects its transcription through the GUI, saves a zoomed
 original-coordinate crop, attaches it to a card, applies revision-aware bulk tags,
 compares/restores content, captures a fresh source manifest for a synthetic blind
@@ -78,7 +92,8 @@ restore confirmation/recovery, and mobile source/card layouts were inspected.
 
 ## Packaged Linux desktop
 
-Build with `./scripts/build-desktop.sh`. It synchronizes locked build dependencies,
+Build with `make build` for a runnable directory or `make package` for AppImage/RPM.
+These call `scripts/build-desktop.sh`, which synchronizes locked build dependencies,
 runs source/backend/frontend/shell checks, builds production assets, freezes the
 one-folder backend and produces AppImage/RPM artifacts. Building alone does not
 establish that the copied release starts or that multiprocessing/resources work.
@@ -95,10 +110,8 @@ cp dist/desktop/Anki-Generator-0.1.0-x86_64.AppImage \
 cp -a build/desktop/backend/anki-generator-backend "$desktop_qa_directory/backend"
 ANKI_TEST_FROZEN_BACKEND="$desktop_qa_directory/backend/anki-generator-backend" \
   uv run --locked --extra anki-integration pytest tests/test_frozen_desktop.py -q
-pnpm --dir desktop test
-node tests/desktop/launch-smoke.cjs "$desktop_qa_directory/Anki-Generator.AppImage"
-node tests/desktop/workflow.cjs "$desktop_qa_directory/Anki-Generator.AppImage"
-node tests/desktop/lifecycle.cjs "$desktop_qa_directory/Anki-Generator.AppImage"
+make test-desktop
+make test-packaged APPIMAGE="$desktop_qa_directory/Anki-Generator.AppImage"
 ```
 
 Install the optional Anki extra first when running the combined suite described
@@ -131,6 +144,9 @@ diagnostics and checkpoint shutdown. Save/open/external-link checks use controll
 destination/launcher stubs; they do not prove manual OS-dialog acceptance or external
 application receipt. Lifecycle coverage/result must be read in the dated
 [verification report](verification.md), not inferred from these runnable commands.
+The unsaved-edit harness additionally checks native keep/discard decisions for
+close, restart and reload, retained draft/ready state, backend process ownership
+and persistence after relaunch. It runs with `make test-packaged`.
 
 Test RPM installation, replacement and removal separately in an isolated Fedora
 system as a regular desktop user. Verify package contents/permissions, actual
@@ -143,8 +159,7 @@ extract-and-run with Chromium sandboxing retained. See the [desktop guide](deskt
 
 ## Actual Anki core integration
 
-    uv sync --locked --extra anki-integration
-    uv run --locked --extra anki-integration pytest tests/integration/test_anki_roundtrip.py -q
+    make test-anki PYTEST_ARGS=-q
 
 The extra pins Anki 26.09.4's official Python/Rust importer and scheduler backend
 (`26.9.4` package version). Eleven Linux cases passed in disposable temporary

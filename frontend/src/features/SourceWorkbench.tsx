@@ -6,6 +6,7 @@ import { api, list, write } from '../services/api';
 import type { Card, Concept, Json, Page, Region } from '../services/types';
 import {
   Badge,
+  Confirm,
   ErrorPanel,
   Loading,
   Modal,
@@ -58,6 +59,8 @@ export function SourceWorkbench({
   const [text, setText] = useState('');
   const [baseRevision, setBaseRevision] = useState(0);
   const dirty = useRef(false);
+  const [unsaved, setUnsaved] = useState(false);
+  const [pendingDestination, setPendingDestination] = useState<number | 'close' | null>(null);
   const [reason, setReason] = useState('');
   const [verified, setVerified] = useState(false);
   const [replace, setReplace] = useState(false);
@@ -93,7 +96,7 @@ export function SourceWorkbench({
       setSavedRegion(null);
       setReplace(false);
     }
-  }, [pageNumber, page?.correction_revision]);
+  }, [documentId, pageNumber, page?.page_number, page?.correction_revision]);
   useEffect(() => {
     const element = viewport.current;
     if (!element) return;
@@ -117,6 +120,7 @@ export function SourceWorkbench({
     onSuccess: () => {
       client.invalidateQueries();
       dirty.current = false;
+      setUnsaved(false);
       toast('Human correction saved. Original extraction and revision history are preserved.');
       setReason('');
     },
@@ -132,7 +136,7 @@ export function SourceWorkbench({
     onSuccess: (region) => {
       setSavedRegion(region);
       client.invalidateQueries();
-      toast('High-resolution evidence region saved in original page coordinates.');
+      toast('Evidence crop saved. You can now attach it to a card or concept.');
     },
   });
   const reprocess = useMutation({
@@ -176,6 +180,26 @@ export function SourceWorkbench({
       toast('Saved crop attached. Changed cards require a fresh review.');
     },
   });
+  function navigate(destination: number | 'close') {
+    if (save.isPending) return;
+    if (dirty.current) setPendingDestination(destination);
+    else if (destination === 'close') onClose();
+    else setPageNumber(destination);
+  }
+  function markDirty() {
+    dirty.current = true;
+    setUnsaved(true);
+  }
+  useEffect(() => {
+    function beforeUnload(event: BeforeUnloadEvent) {
+      if (dirty.current) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    }
+    window.addEventListener('beforeunload', beforeUnload);
+    return () => window.removeEventListener('beforeunload', beforeUnload);
+  }, []);
   function point(e: PointerEvent) {
     const rect = canvas.current!.getBoundingClientRect();
     return [
@@ -207,7 +231,7 @@ export function SourceWorkbench({
   return (
     <Modal
       title={`Correct and inspect · ${documentName || 'Source document'}`}
-      onClose={onClose}
+      onClose={() => navigate('close')}
       wide
     >
       {interpretation.isPending ? (
@@ -221,10 +245,8 @@ export function SourceWorkbench({
               Page
               <select
                 value={pageNumber}
-                onChange={(e) => {
-                  dirty.current = false;
-                  setPageNumber(Number(e.target.value));
-                }}
+                disabled={save.isPending}
+                onChange={(e) => navigate(Number(e.target.value))}
               >
                 {interpretation.data.pages.map((p) => (
                   <option key={p.page_number} value={p.page_number}>
@@ -319,19 +341,38 @@ export function SourceWorkbench({
                 </div>
               </div>
               <p className="field-help">
-                Drag a rectangle to choose evidence. Zoom changes presentation; saved coordinates
-                remain in original page units. Pan mode and scroll support tall pages.
+                Drag a rectangle around a useful diagram or passage, keeping its labels and context.
+                Use zoom for detail, or Pan to move around a tall page.
               </p>
               {selection && (
                 <section className="reference-editor">
-                  <strong>
-                    Selected original bounds: {selection.map((n) => n.toFixed(1)).join(', ')}
-                  </strong>
+                  <strong>Save this source evidence</strong>
                   <div className="form-grid">
                     <label>
                       Region label
                       <input value={label} onChange={(e) => setLabel(e.target.value)} />
                     </label>
+                    <label>
+                      Image quality
+                      <select
+                        value={[120, 200, 300].includes(dpi) ? dpi : 'custom'}
+                        onChange={(e) => setDpi(Number(e.target.value))}
+                      >
+                        <option value={120}>Compact · smaller file</option>
+                        <option value={200}>Balanced · recommended</option>
+                        <option value={300}>Detailed · fine mathematical notation</option>
+                        {![120, 200, 300].includes(dpi) && (
+                          <option value="custom">Custom resolution</option>
+                        )}
+                      </select>
+                    </label>
+                  </div>
+                  <details>
+                    <summary>Advanced image settings</summary>
+                    <p className="field-help">
+                      Original page bounds: {selection.map((n) => n.toFixed(1)).join(', ')}. Saved
+                      geometry stays aligned with the original at every zoom level.
+                    </p>
                     <label>
                       Crop resolution (DPI)
                       <input
@@ -342,10 +383,16 @@ export function SourceWorkbench({
                         onChange={(e) => setDpi(Number(e.target.value))}
                       />
                     </label>
-                  </div>
+                  </details>
                   <button
                     className="button"
-                    disabled={crop.isPending}
+                    disabled={
+                      crop.isPending ||
+                      !label.trim() ||
+                      !Number.isFinite(dpi) ||
+                      dpi < 72 ||
+                      dpi > 300
+                    }
                     onClick={() => crop.mutate()}
                   >
                     <Crop size={15} />
@@ -441,7 +488,7 @@ export function SourceWorkbench({
                   rows={13}
                   value={text}
                   onChange={(e) => {
-                    dirty.current = true;
+                    markDirty();
                     setText(e.target.value);
                   }}
                 />
@@ -451,7 +498,10 @@ export function SourceWorkbench({
                 <textarea
                   rows={2}
                   value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  onChange={(e) => {
+                    markDirty();
+                    setReason(e.target.value);
+                  }}
                   placeholder="What was misread or omitted?"
                 />
               </label>
@@ -459,7 +509,10 @@ export function SourceWorkbench({
                 <input
                   type="checkbox"
                   checked={verified}
-                  onChange={(e) => setVerified(e.target.checked)}
+                  onChange={(e) => {
+                    markDirty();
+                    setVerified(e.target.checked);
+                  }}
                 />
                 <ShieldCheck size={14} />I independently checked this transcription against the
                 original
@@ -477,13 +530,18 @@ export function SourceWorkbench({
                   </span>
                 </label>
               )}
+              {unsaved && (
+                <p className="field-help" role="status">
+                  Unsaved transcription changes
+                </p>
+              )}
               <button
                 className="button primary"
                 disabled={save.isPending || !reason.trim() || (page.human_verified && !replace)}
                 onClick={() => save.mutate()}
               >
                 <Save size={15} />
-                Save transcription correction
+                {save.isPending ? 'Saving correction…' : 'Save transcription correction'}
               </button>
               {save.error && <ErrorPanel error={save.error} />}
               <h3 className="preview-label">Rendered mathematical preview</h3>
@@ -518,10 +576,10 @@ export function SourceWorkbench({
               <hr />
               <h3>Reprocess only affected evidence</h3>
               <label>
-                Processing mode
+                How should this source be processed?
                 <select value={retryMode} onChange={(e) => setRetryMode(e.target.value)}>
-                  <option value="extract">Local extraction of selected page</option>
-                  <option value="interpret">Vision interpretation of saved crop or page</option>
+                  <option value="extract">Extract text locally · no API usage</option>
+                  <option value="interpret">Interpret with AI · sends source to OpenAI</option>
                 </select>
               </label>
               {retryMode === 'interpret' && (
@@ -547,7 +605,12 @@ export function SourceWorkbench({
                 onClick={() => reprocess.mutate()}
               >
                 <RefreshCw size={15} />
-                Reprocess {savedRegion ? 'saved region' : `page ${pageNumber}`}
+                {reprocess.isPending
+                  ? 'Queuing…'
+                  : retryMode === 'extract'
+                    ? 'Extract text again'
+                    : 'Interpret with AI again'}{' '}
+                · {savedRegion ? 'saved crop' : `page ${pageNumber}`}
               </button>
               {reprocess.error && <ErrorPanel error={reprocess.error} />}
             </section>
@@ -555,6 +618,30 @@ export function SourceWorkbench({
         </>
       ) : (
         <p>No extracted page is available. Run local extraction first.</p>
+      )}
+      {pendingDestination !== null && (
+        <Confirm
+          title="Discard unsaved transcription changes?"
+          confirmLabel={
+            pendingDestination === 'close'
+              ? 'Discard changes and close'
+              : 'Discard changes and switch page'
+          }
+          cancelLabel="Keep editing"
+          onClose={() => setPendingDestination(null)}
+          onConfirm={() => {
+            const destination = pendingDestination;
+            dirty.current = false;
+            setUnsaved(false);
+            setReason('');
+            setPendingDestination(null);
+            if (destination === 'close') onClose();
+            else setPageNumber(destination);
+          }}
+        >
+          Your text, correction rationale and verification choice have not been saved. Save the
+          correction first if you want to keep them.
+        </Confirm>
       )}
     </Modal>
   );

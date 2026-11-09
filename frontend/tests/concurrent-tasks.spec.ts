@@ -55,12 +55,22 @@ test('genuinely concurrent synthetic courses keep independent progress, queue, c
     .fill('sk-controlled-concurrency-fixture');
   await page.getByRole('button', { name: 'Save API key', exact: true }).click();
   await expect(page.getByText('Key configured', { exact: true })).toBeVisible();
+  await page.getByText('Customize shared resource limits', { exact: true }).click();
   await page.getByLabel('Simultaneous course tasks').fill('2');
   await page.getByLabel('Shared OpenAI request limit').fill('4');
   await page.getByLabel('Shared local processing limit').fill('2');
   await page.getByLabel('OpenAI requests per task').fill('2');
-  await page.getByRole('button', { name: 'Save preferences', exact: true }).click();
-  await expect(page.locator('.toast')).toContainText('saved');
+  const savePreferences = page.getByRole('button', { name: 'Save preferences', exact: true });
+  if (await savePreferences.isEnabled()) {
+    await savePreferences.click();
+    await expect(page.locator('.toast')).toContainText('saved');
+  }
+  const configured = await (await page.request.get('/api/settings')).json();
+  expect(configured.tasks).toMatchObject({
+    max_concurrent_jobs: 2,
+    api_concurrency: 4,
+    local_concurrency: 2,
+  });
   const stamp = Date.now();
   const a = await createCourse(page, `Continuous Optimization ${stamp}`);
   const b = await createCourse(page, `Machine Learning ${stamp}`);
@@ -184,9 +194,9 @@ test('genuinely concurrent synthetic courses keep independent progress, queue, c
     await expect(page.locator('.toast')).toContainText('review decision');
     await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
     await page.getByRole('link', { name: 'Exports', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Generate & download APKG' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Save Anki package (.apkg)' })).toBeEnabled();
     const download = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Generate & download APKG' }).click();
+    await page.getByRole('button', { name: 'Save Anki package (.apkg)' }).click();
     expect((await download).suggestedFilename()).toMatch(/\.apkg$/);
     expect(await status(second.id)).toBe('running');
     // Pause and cancel operate only on their selected tasks, at safe request boundaries.

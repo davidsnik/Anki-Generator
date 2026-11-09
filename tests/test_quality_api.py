@@ -108,6 +108,8 @@ def test_paired_prepared_run_never_queues_before_explicit_enqueue(
     from anki_generator.services.run_submission import submit_run
 
     rt = api_client.app.state.runtime
+    provider = ControlledProvider()
+    rt.runner.provider_factory = lambda key, config: provider
     rt.secrets.set("controlled-test-key")
     run = submit_run(
         rt,
@@ -123,6 +125,7 @@ def test_paired_prepared_run_never_queues_before_explicit_enqueue(
         assert saved.config["prompt_hashes"]["knowledge"]
     rt.runner.run_now(run["id"])
     assert api_client.get(f"/api/runs/{run['id']}").json()["status"] == "prepared"
+    assert not provider.calls
 
 
 def test_queued_revision_refuses_newer_edit(api_client, course):

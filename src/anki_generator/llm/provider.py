@@ -18,19 +18,18 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError
 
+from anki_generator.llm.model_catalogue import CATALOGUE, DEFAULT_MODEL
 from anki_generator.orchestration.resources import GlobalResources
 
-DEFAULT_MODEL = "gpt-6-astra"
-# Capability declarations are intentionally conservative. Unknown model IDs can be
-# selected, but must be tested through Responses instead of guessing parameters.
+# Compatibility export for existing callers; catalogue remains the single source.
 MODEL_CAPABILITIES = {
-    "gpt-6-astra": {
-        "reasoning_efforts": ("low", "medium", "high", "xhigh", "max"),
-        "structured_outputs": True,
-        "vision": True,
-        "documentation": "https://developers.openai.com/api/docs/models/gpt-6-astra",
-        "verified_on": "2026-11-08",
-    },
+    identifier: {
+        "reasoning_efforts": item.reasoning_efforts,
+        "structured_outputs": item.structured_outputs,
+        "vision": item.vision,
+        "documentation": f"https://developers.openai.com/api/docs/models/{identifier}",
+    }
+    for identifier, item in CATALOGUE.items()
 }
 
 
@@ -77,6 +76,7 @@ class OpenAIProvider:
         job_id: str = "interactive",
         checkpoint: Callable[[], None] | None = None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
+        request_timeout: float = 180.0,
     ):
         if not api_key:
             raise ProviderError("Configure an OpenAI API key in Settings.", kind="authentication")
@@ -85,7 +85,7 @@ class OpenAIProvider:
         if client is None:
             from openai import OpenAI
 
-            client = OpenAI(api_key=api_key, max_retries=0, timeout=180.0)
+            client = OpenAI(api_key=api_key, max_retries=0, timeout=request_timeout)
         self.client = client
         self.retries = min(max(retries, 0), 5)
         self.sleep = sleep
@@ -217,7 +217,16 @@ class OpenAIProvider:
         values, _ = self._request(
             lambda: list(self.client.models.list()), model="models-list", operation="models"
         )
-        return sorted(item.id for item in values)
+        identifiers = [getattr(item, "id", None) for item in values]
+        if any(not isinstance(identifier, str) or not identifier for identifier in identifiers):
+            raise ProviderError("OpenAI returned an invalid model list.", kind="invalid_output")
+        return sorted(identifiers)
+
+    def retrieve_model(self, model: str) -> str:
+        value, _ = self._request(
+            lambda: self.client.models.retrieve(model), model=model, operation="model-access"
+        )
+        return value.id
 
     def test(self, model: str = DEFAULT_MODEL) -> dict[str, Any]:
         class ConnectionCheck(BaseModel):
@@ -260,9 +269,17 @@ class OpenAIProvider:
             "max_output_tokens": int(settings.get("max_output_tokens", 16000)),
             "store": False,
         }
-        if model in MODEL_CAPABILITIES:
+        capability = CATALOGUE.get(model)
+        if capability and (not capability.responses or not capability.structured_outputs):
+            raise ProviderError(
+                "This model does not support structured card processing. Choose a general model.",
+                kind="configuration",
+            )
+        if capability and images and not capability.vision:
+            raise ProviderError("This model cannot interpret source images.", kind="configuration")
+        if capability and capability.reasoning_efforts:
             effort = settings.get("reasoning_effort", "high")
-            if effort not in MODEL_CAPABILITIES[model]["reasoning_efforts"]:
+            if effort not in capability.reasoning_efforts:
                 raise ProviderError(
                     "Unsupported reasoning effort for the selected model.", kind="configuration"
                 )

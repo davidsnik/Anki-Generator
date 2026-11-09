@@ -101,6 +101,11 @@ see [Tasks](tasks.md) and [resource management](resource-management.md).
 
 ## Closing, restarting and interrupted work
 
+Unsaved settings, card edits and source transcriptions prompt **Keep editing** or
+**Discard changes** before closing, restarting or reloading the workspace. Keeping
+changes leaves the draft and processing service available; it does not start
+shutdown. Discarding continues the requested action and its normal task safeguards.
+
 Closing with active work offers keeping the window open, **Checkpoint & quit**, and
 **Keep running in tray** when available. Tray support is optional; the checkpoint
 workflow remains available without it. Quitting stops new admissions and waits for
@@ -189,10 +194,11 @@ users launching the resulting release. Keep adequate disk space for the Python
 bundle, Electron payload and temporary AppImage/RPM artifacts.
 
 ```sh
-./scripts/build-desktop.sh
+make package
 ```
 
-The script creates a dedicated `build/desktop/venv`, synchronizes locked Python and
+The Makefile delegates to `scripts/build-desktop.sh`, which creates a dedicated
+`build/desktop/venv`, synchronizes locked Python and
 both frontend/desktop pnpm environments, runs Python lint/format/tests and frontend/
 shell unit tests, builds React, copies its assets, creates icons, freezes the
 backend and assembles Electron. Electron Builder creates the AppImage; native
@@ -207,10 +213,12 @@ describes its packaging boundary; the Fedora spec lives in `desktop/build`.
 Useful variants:
 
 ```sh
-./scripts/build-desktop.sh --appimage-only
-./scripts/build-desktop.sh --backend-only
-./scripts/build-desktop.sh --skip-checks
-./scripts/dev-desktop.sh
+make build
+make run
+make package PACKAGE_ARGS=--appimage-only
+make package PACKAGE_ARGS=--backend-only
+make package PACKAGE_ARGS=--skip-checks
+make dev
 ```
 
 `--skip-checks` explicitly omits checks; it is not release verification. Backend-only
@@ -221,11 +229,13 @@ libraries and keyring metadata are collected by `packaging/backend.spec`.
 `multiprocessing.freeze_support()` runs before application imports so parser and
 symbolic child processes can spawn from the frozen backend safely.
 
-Desktop development uses source Python with production frontend assets. For
-frontend hot reload, use the managed HMR mode:
+`make build` creates the runnable unpacked desktop directory without an installer;
+`make run` opens that built application. `make build-web` is the faster production
+frontend/asset-copy target. Desktop development uses source Python. For frontend
+hot reload, use the managed HMR mode:
 
 ```sh
-./scripts/dev-desktop.sh --hmr --devtools
+make dev ARGS=--devtools
 ```
 
 The script starts and health-checks its own Vite server at
@@ -239,9 +249,10 @@ changes in this mode.
 Only the exact development frontend origin is allowed; packaged releases reject
 service overrides. The script clears inherited `ELECTRON_RUN_AS_NODE` and
 `NODE_OPTIONS` so VS Code/Codex terminals can launch the shell normally. Open the
-repository in the editor, run the script in a terminal, and retain the established
-Python/frontend checks. Browser `./install.sh`, `./run.sh`, `./dev.sh` and the
-deterministic `anki-generator inspect` CLI remain available.
+repository in the editor, run `make dev` in a terminal, and use `make check` for
+Python/frontend/shell checks. See [development commands](development.md) for the
+complete target list, tool overrides and safe cleanup. Browser `./install.sh`,
+`./run.sh`, `./dev.sh` and the deterministic `anki-generator inspect` CLI remain available.
 
 ## Test the distribution and maintain releases
 

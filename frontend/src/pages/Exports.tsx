@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCheck,
@@ -61,7 +62,7 @@ export function ExportsPage({ course }: { course: Course }) {
       }),
     onSuccess: (record) => {
       client.invalidateQueries({ queryKey: ['exports', course.id] });
-      toast(`${format.toUpperCase()} export is ready.`);
+      toast(`${format.toUpperCase()} file prepared. Your save or download will now open.`);
       window.location.assign(record.download_url || `/api/exports/${record.id}/download`);
     },
   });
@@ -76,17 +77,19 @@ export function ExportsPage({ course }: { course: Course }) {
       <SectionHead title="Take your understanding with you">
         A real Anki deck. Stable identities. Your original evidence along for the ride.
       </SectionHead>
-      <ExportPreview
-        courseId={course.id}
-        selection={selection ? Array.from(selection) : null}
-        onBlocked={setBlocked}
-      />
+      {format === 'apkg' && (
+        <ExportPreview
+          courseId={course.id}
+          selection={selection ? Array.from(selection) : null}
+          onBlocked={setBlocked}
+        />
+      )}
       <div className="export-layout">
         <section className="panel export-builder">
           <div className="export-icon">
             <PackageCheck size={30} />
           </div>
-          <h2>Ready for the next review.</h2>
+          <h2>{format === 'apkg' ? 'Save a deck for Anki' : 'Save card records'}</h2>
           <p className="muted">
             Approved cards without unresolved verification failures enter the Anki deck. Unverified
             cards require an explicit human review rationale. JSON and CSV retain the records you
@@ -112,14 +115,22 @@ export function ExportsPage({ course }: { course: Course }) {
               </button>
             ))}
           </div>
-          <label>
-            Destination deck name
-            <input value={deck} onChange={(e) => setDeck(e.target.value)} required />
-          </label>
+          {format === 'apkg' && (
+            <label>
+              Deck name in Anki
+              <input value={deck} onChange={(e) => setDeck(e.target.value)} required />
+            </label>
+          )}
           <div className="export-stats">
             <div>
               <strong>{selectedCount}</strong>
-              <span>cards selected</span>
+              <span>
+                {selection === null
+                  ? format === 'apkg'
+                    ? 'approved cards in course'
+                    : 'records in course'
+                  : 'cards explicitly selected'}
+              </span>
             </div>
             <div>
               <strong>
@@ -144,7 +155,7 @@ export function ExportsPage({ course }: { course: Course }) {
             disabled={
               exportCards.isPending ||
               !selectedCount ||
-              !deck.trim() ||
+              (format === 'apkg' && !deck.trim()) ||
               (format === 'apkg' && blocked)
             }
             onClick={() => exportCards.mutate()}
@@ -152,9 +163,38 @@ export function ExportsPage({ course }: { course: Course }) {
             <Download size={17} />
             {exportCards.isPending
               ? 'Building package…'
-              : `Generate & download ${format.toUpperCase()}`}
+              : format === 'apkg'
+                ? 'Save Anki package (.apkg)'
+                : `Save ${format.toUpperCase()} file`}
           </button>
           {exportCards.error && <ErrorPanel error={exportCards.error} />}
+          {format === 'apkg' && (
+            <p className="field-help">
+              Save the package, then open it in Anki or choose File → Import. Saving a file here
+              does not import it into Anki.
+            </p>
+          )}
+          {format === 'apkg' &&
+            selection === null &&
+            !selectedCount &&
+            !cards.isPending &&
+            !cards.isError && (
+              <p className="warning-note">
+                No cards are approved yet.{' '}
+                <Link to={`/courses/${course.id}/cards`}>Review and approve flashcards</Link> before
+                creating your deck.
+              </p>
+            )}
+          {selection !== null && !selectedCount && (
+            <p className="field-help">
+              Select cards on the right, or choose all eligible cards across this course.
+            </p>
+          )}
+          {format === 'apkg' && blocked && !!selectedCount && (
+            <p className="field-help">
+              Anki export becomes available after the identity and update checks above pass.
+            </p>
+          )}
           <div className="field-help">
             <ShieldCheck size={15} /> Stable note identifiers are reused across exports. Anki import
             options determine updates; existing collection contents are never changed directly.
@@ -168,7 +208,7 @@ export function ExportsPage({ course }: { course: Course }) {
                 className="text-link"
                 onClick={() =>
                   setSelection(
-                    selected.size
+                    selection === null || selected.size
                       ? new Set()
                       : new Set(
                           (format === 'apkg' ? eligible : cards.data?.items || []).map((c) => c.id),
@@ -176,7 +216,9 @@ export function ExportsPage({ course }: { course: Course }) {
                   )
                 }
               >
-                {selected.size ? 'Clear selection' : 'Select eligible'}
+                {selection === null || selected.size
+                  ? 'Clear selection'
+                  : `Select ${format === 'apkg' ? 'eligible cards' : 'records'} on this page`}
               </button>
             }
           />
@@ -192,8 +234,9 @@ export function ExportsPage({ course }: { course: Course }) {
             For a specific selection, turn off the all-course selection and check individual cards.
           </p>
           <p className="field-help">
-            {eligible.length} approved cards on this page are ready for Anki. Review pending cards
-            in the Flashcards tab.
+            {eligible.length} approved cards on this page pass the review filter.{' '}
+            <Link to={`/courses/${course.id}/cards`}>Review flashcards</Link> to inspect findings
+            and approve more cards. Identity checks can still block a package.
           </p>
           {cards.isPending ? (
             <Loading />
@@ -265,7 +308,6 @@ export function ExportsPage({ course }: { course: Course }) {
                   <tr key={record.id}>
                     <td>
                       <strong>{record.deck_name || course.deck_name || course.name}</strong>
-                      <small>{record.id.slice(0, 8)}</small>
                     </td>
                     <td>
                       <Badge>{record.format.toUpperCase()}</Badge>
@@ -278,7 +320,7 @@ export function ExportsPage({ course }: { course: Course }) {
                         href={record.download_url || `/api/exports/${record.id}/download`}
                       >
                         <Download size={14} />
-                        Download
+                        Save again
                       </a>
                     </td>
                   </tr>

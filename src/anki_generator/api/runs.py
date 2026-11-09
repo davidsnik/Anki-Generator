@@ -54,7 +54,21 @@ def control_run(request: Request, run_id: str, action: str) -> dict[str, Any]:
     if action not in {"pause", "resume", "cancel", "retry"}:
         raise LookupError("Unknown processing action")
     with rt.sessions() as session:
-        require(session, Run, run_id)
+        run = require(session, Run, run_id)
+        if action in {"resume", "retry"}:
+            from anki_generator.services.model_discovery import preflight_run
+            from anki_generator.services.settings import ApplicationSettings
+
+            config = {
+                key: value
+                for key, value in run.config.items()
+                if key in ApplicationSettings.model_fields
+            }
+            mode = run.mode
+        else:
+            config, mode = {}, "extract"
+    if action in {"resume", "retry"}:
+        preflight_run(rt, config, mode)
     getattr(rt.runner, action)(run_id)
     with rt.sessions() as session:
         return run_view(session, require(session, Run, run_id))

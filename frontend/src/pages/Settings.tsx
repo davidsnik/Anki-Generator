@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Check,
   Database,
@@ -9,7 +9,6 @@ import {
   FlaskConical,
   KeyRound,
   LockKeyhole,
-  RefreshCw,
   Save,
   ShieldCheck,
   SlidersHorizontal,
@@ -20,8 +19,9 @@ import { SchedulerPreferences } from '../features/tasks/SchedulerPreferences';
 import { ProcessingPreferences } from '../features/ProcessingPreferences';
 import { BackupRestore } from '../features/BackupRestore';
 import { DesktopPanel } from '../features/Desktop';
+import { ModelPreferences } from '../features/ModelPreferences';
 import { generationPresets } from '../services/generationPresets';
-import { api, downloadBackup, list, write } from '../services/api';
+import { api, downloadBackup, write } from '../services/api';
 import {
   Badge,
   Confirm,
@@ -42,6 +42,7 @@ export function KeySetup({ status }: { status: KeyStatus }) {
     mutationFn: () => write('/settings/key', { api_key: key, persist }, 'PUT'),
     onSuccess: () => {
       setKey('');
+      test.reset();
       client.invalidateQueries();
       toast('API key configured securely.');
     },
@@ -53,6 +54,7 @@ export function KeySetup({ status }: { status: KeyStatus }) {
   const del = useMutation({
     mutationFn: () => api('/settings/key', { method: 'DELETE' }),
     onSuccess: () => {
+      test.reset();
       client.invalidateQueries();
       setRemove(false);
       toast('Stored API key removed.');
@@ -63,6 +65,11 @@ export function KeySetup({ status }: { status: KeyStatus }) {
     persistent_available?: boolean;
     notice?: string;
   };
+  const storageLabels: Record<string, string> = {
+    session: 'Until this application closes',
+    keyring: 'Saved securely on this computer',
+    environment: 'Provided by your environment',
+  };
   return (
     <div className="key-setup">
       <div className="key-status">
@@ -70,7 +77,9 @@ export function KeySetup({ status }: { status: KeyStatus }) {
           <span className="status-dot" />
           {status.configured ? 'Key configured' : 'No API key configured'}
         </Badge>
-        {full.storage && <span className="muted">{full.storage} storage</span>}
+        {full.storage && full.storage !== 'none' && (
+          <span className="muted">{storageLabels[full.storage] || 'Stored securely'}</span>
+        )}
       </div>
       <label htmlFor="api-key">
         OpenAI API key
@@ -81,7 +90,10 @@ export function KeySetup({ status }: { status: KeyStatus }) {
             autoComplete="off"
             type={visible ? 'text' : 'password'}
             value={key}
-            onChange={(e) => setKey(e.target.value)}
+            onChange={(e) => {
+              setKey(e.target.value);
+              test.reset();
+            }}
             placeholder={status.configured ? 'Enter a new key to replace the current one' : 'sk-…'}
           />
           <button
@@ -104,9 +116,9 @@ export function KeySetup({ status }: { status: KeyStatus }) {
       </label>
       <p className="field-help">
         <LockKeyhole size={13} />
-        {full.notice ||
-          status.message ||
-          'Keys are held in server memory for this session. Persistent storage is available only with a secure system keyring.'}
+        {full.persistent_available || status.secure_storage_available
+          ? 'Optional: save securely in your operating system’s credential store so you can reconnect next time.'
+          : 'Your key stays in memory until the application closes. A secure system credential store is not available in this session.'}
       </p>
       <div className="inline-actions wrap">
         <button
@@ -134,6 +146,18 @@ export function KeySetup({ status }: { status: KeyStatus }) {
       </div>
       {(set.error || test.error || del.error) && (
         <ErrorPanel error={set.error || test.error || del.error} />
+      )}
+      {test.data && (
+        <p className="key-connection-result" role="status" data-ok={test.data.ok}>
+          {test.data.ok ? 'Connected. ' : 'Connection needs attention. '}
+          {test.data.message}
+        </p>
+      )}
+      {!status.configured && (
+        <p className="field-help">
+          Get a key from your OpenAI API account. API usage is billed separately from a ChatGPT
+          subscription. You can import, inspect, edit and export your material without connecting.
+        </p>
       )}
       <p className="field-help">
         Connection testing sends a small test request to OpenAI and may incur API usage. Course
@@ -165,7 +189,16 @@ const defaultCriteria: Json = {
   topic_exclusions: [],
   instructions: '',
 };
-export function CriteriaForm({ value, onChange }: { value: Json; onChange: (v: Json) => void }) {
+export function CriteriaForm({
+  value,
+  onChange,
+  compact = false,
+}: {
+  value: Json;
+  onChange: (v: Json) => void;
+  compact?: boolean;
+}) {
+  const [advanced, setAdvanced] = useState(!compact);
   const data = { ...defaultCriteria, ...value };
   const update = (key: string, v: unknown) => onChange({ ...data, [key]: v });
   const selectedPreset = generationPresets.find((preset) =>
@@ -225,108 +258,119 @@ export function CriteriaForm({ value, onChange }: { value: Json; onChange: (v: J
           </select>
         </label>
       </div>
-      <div className="range-grid">
-        {[
-          ['theory_emphasis', 'Theory & definitions'],
-          ['methods_emphasis', 'Problem-solving methods'],
-          ['conceptual_emphasis', 'Conceptual understanding'],
-        ].map(([key, label]) => (
-          <label key={key}>
-            {label}
-            <span className="range-control">
-              <input
-                type="range"
-                min="0"
-                max="2"
-                step="0.1"
-                value={Number(data[key])}
-                onChange={(e) => update(key, Number(e.target.value))}
-              />
-              <output>{Number(data[key]).toFixed(1)}×</output>
-            </span>
-          </label>
-        ))}
-      </div>
-      <div className="form-grid">
-        <label>
-          Proof treatment
-          <select
-            value={String(data.proof_treatment)}
-            onChange={(e) => update('proof_treatment', e.target.value)}
-          >
-            <option value="key_steps">Key steps & proof techniques</option>
-            <option value="strategies">Proof strategies</option>
-            <option value="exclude">Exclude proof recall</option>
-          </select>
-        </label>
-        <label>
-          Example treatment
-          <select
-            value={String(data.example_treatment)}
-            onChange={(e) => update('example_treatment', e.target.value)}
-          >
-            <option value="transfer">Transferable applications</option>
-            <option value="include">Illustrative examples</option>
-            <option value="exclude">Exclude examples</option>
-          </select>
-        </label>
-      </div>
-      <label>
-        Preferred card types
-        <div className="checkbox-row">
-          {['basic', 'cloze'].map((type) => (
-            <label key={type} className="check-label">
-              <input
-                type="checkbox"
-                checked={(data.card_types as string[]).includes(type)}
-                onChange={(e) =>
-                  update(
-                    'card_types',
-                    e.target.checked
-                      ? [...(data.card_types as string[]), type]
-                      : (data.card_types as string[]).filter((t) => t !== type),
-                  )
-                }
-              />
-              {type}
+      <details
+        open={advanced}
+        onToggle={(event) => setAdvanced(event.currentTarget.open)}
+        className="settings-details"
+      >
+        <summary>Customize subjects, card styles & examples</summary>
+        <div className="range-grid advanced-limits">
+          {[
+            ['theory_emphasis', 'Theory & definitions'],
+            ['methods_emphasis', 'Problem-solving methods'],
+            ['conceptual_emphasis', 'Conceptual understanding'],
+          ].map(([key, label]) => (
+            <label key={key}>
+              {label}
+              <span className="range-control">
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  value={Number(data[key])}
+                  onChange={(e) => update(key, Number(e.target.value))}
+                />
+                <output>{Number(data[key]).toFixed(1)}×</output>
+              </span>
             </label>
           ))}
         </div>
-      </label>
-      <div className="checkbox-row">
-        <label className="check-label">
-          <input
-            type="checkbox"
-            checked={!!data.include_explanations}
-            onChange={(e) => update('include_explanations', e.target.checked)}
-          />{' '}
-          Include explanations
+        <div className="form-grid">
+          <label>
+            Proof treatment
+            <select
+              value={String(data.proof_treatment)}
+              onChange={(e) => update('proof_treatment', e.target.value)}
+            >
+              <option value="key_steps">Key steps & proof techniques</option>
+              <option value="strategies">Proof strategies</option>
+              <option value="exclude">Exclude proof recall</option>
+            </select>
+          </label>
+          <label>
+            Example treatment
+            <select
+              value={String(data.example_treatment)}
+              onChange={(e) => update('example_treatment', e.target.value)}
+            >
+              <option value="transfer">Transferable applications</option>
+              <option value="include">Illustrative examples</option>
+              <option value="exclude">Exclude examples</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          Preferred card types
+          <div className="checkbox-row">
+            {['basic', 'cloze'].map((type) => (
+              <label key={type} className="check-label">
+                <input
+                  type="checkbox"
+                  checked={(data.card_types as string[]).includes(type)}
+                  disabled={
+                    (data.card_types as string[]).length === 1 &&
+                    (data.card_types as string[]).includes(type)
+                  }
+                  onChange={(e) =>
+                    update(
+                      'card_types',
+                      e.target.checked
+                        ? [...(data.card_types as string[]), type]
+                        : (data.card_types as string[]).filter((t) => t !== type),
+                    )
+                  }
+                />
+                {type}
+              </label>
+            ))}
+          </div>
         </label>
-        <label className="check-label">
+        <div className="checkbox-row">
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={!!data.include_explanations}
+              onChange={(e) => update('include_explanations', e.target.checked)}
+            />{' '}
+            Include explanations
+          </label>
+          <label className="check-label">
+            <input
+              type="checkbox"
+              checked={!!data.include_diagrams}
+              onChange={(e) => update('include_diagrams', e.target.checked)}
+            />{' '}
+            Preserve useful source diagrams
+          </label>
+        </div>
+        <label>
+          Topic exclusions
           <input
-            type="checkbox"
-            checked={!!data.include_diagrams}
-            onChange={(e) => update('include_diagrams', e.target.checked)}
-          />{' '}
-          Preserve useful source diagrams
+            value={(data.topic_exclusions as string[]).join(', ')}
+            onChange={(e) =>
+              update(
+                'topic_exclusions',
+                e.target.value
+                  .split(',')
+                  .map((v) => v.trim())
+                  .filter(Boolean),
+              )
+            }
+            placeholder="Separate topics with commas"
+          />
         </label>
-      </div>
-      <label>
-        Topic exclusions
-        <input
-          value={(data.topic_exclusions as string[]).join(', ')}
-          onChange={(e) =>
-            update(
-              'topic_exclusions',
-              e.target.value
-                .split(',')
-                .map((v) => v.trim())
-                .filter(Boolean),
-            )
-          }
-          placeholder="Separate topics with commas"
-        />
-      </label>
+      </details>
       <label>
         Custom generation guidance
         <textarea
@@ -344,29 +388,64 @@ export function CriteriaForm({ value, onChange }: { value: Json; onChange: (v: J
   );
 }
 export function SettingsPage({ bootstrap }: { bootstrap: Bootstrap }) {
-  const [settings, setSettings] = useState<Json>(bootstrap.settings);
-  const [modelsLoaded, setModelsLoaded] = useState(false);
   const client = useQueryClient();
+  const draft = client.getQueryData<{ settings: Json; baseline: string }>(['settings-draft']);
+  const [settings, setSettings] = useState<Json>(draft?.settings ?? bootstrap.settings);
+  const [baseline, setBaseline] = useState(draft?.baseline ?? JSON.stringify(bootstrap.settings));
+  const baselineRef = useRef(baseline);
   const toast = useToast();
-  const models = useQuery({
-    queryKey: ['models'],
-    queryFn: () => api<unknown>('/settings/models'),
-    enabled: modelsLoaded,
-    retry: false,
-  });
+  const dirty = JSON.stringify(settings) !== baseline;
+  useEffect(() => {
+    client.setQueryDefaults(['settings-draft'], { gcTime: Infinity });
+    client.setQueryData(['settings-draft'], { settings, baseline });
+  }, [client, settings, baseline]);
+  useEffect(() => {
+    setSettings((current) =>
+      JSON.stringify(current) === baselineRef.current ? bootstrap.settings : current,
+    );
+    if (!dirty) {
+      const next = JSON.stringify(bootstrap.settings);
+      baselineRef.current = next;
+      setBaseline(next);
+    }
+    // Background bootstrap refreshes must never replace an edited form.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bootstrap.settings]);
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
   const save = useMutation({
-    mutationFn: () => write('/settings', settings, 'PATCH'),
-    onSuccess: () => {
-      client.invalidateQueries();
-      toast('Workspace preferences saved.');
+    mutationFn: (snapshot: Json) => write('/settings', snapshot, 'PATCH'),
+    onSuccess: (_, snapshot) => {
+      const next = JSON.stringify(snapshot);
+      baselineRef.current = next;
+      setBaseline(next);
+      void client.invalidateQueries({ queryKey: ['bootstrap'] });
+      toast('Workspace preferences saved. New runs will use these choices.');
     },
   });
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        if (dirty && !save.isPending) save.mutate(settings);
+      }
+    };
+    window.addEventListener('keydown', shortcut);
+    return () => window.removeEventListener('keydown', shortcut);
+  }, [dirty, save, settings]);
   const backup = useMutation({
     mutationFn: downloadBackup,
     onSuccess: () => toast('Data backup downloaded.'),
   });
   const update = (key: string, value: unknown) => {
-    setSettings({ ...settings, [key]: value });
+    setSettings((current) => ({ ...current, [key]: value }));
     if (key === 'theme') {
       const resolved =
         value === 'system'
@@ -379,207 +458,194 @@ export function SettingsPage({ bootstrap }: { bootstrap: Bootstrap }) {
       window.dispatchEvent(new CustomEvent('anki-theme-change', { detail: resolved }));
     }
   };
-  const stageModels = (settings.models || {}) as Record<string, string>;
-  const choices = list<{ id: string } | string>(models.data).map((m) =>
-    typeof m === 'string' ? m : m.id,
-  );
+  const discard = () => {
+    const saved = JSON.parse(baseline) as Json;
+    setSettings(saved);
+    const theme = String(saved.theme || 'system');
+    const resolved =
+      theme === 'system'
+        ? matchMedia('(prefers-color-scheme: dark)').matches
+          ? 'dark'
+          : 'light'
+        : theme;
+    document.documentElement.dataset.theme = resolved;
+    localStorage.setItem('anki-theme', resolved);
+    window.dispatchEvent(new CustomEvent('anki-theme-change', { detail: resolved }));
+  };
   const role = (settings.role_influence || {}) as Record<string, number>;
   const extraction = (settings.extraction || {}) as Record<string, number>;
+  const saveButton = (
+    <button
+      className="button primary"
+      onClick={() => save.mutate(settings)}
+      disabled={!dirty || save.isPending}
+    >
+      <Save size={16} />
+      {save.isPending ? 'Saving…' : 'Save preferences'}
+    </button>
+  );
   return (
     <>
       <PageTitle
-        eyebrow="MAKE IT YOURS"
-        title="A workspace that thinks with you."
-        description="Connect your models, refine your criteria, and keep your knowledge safely in your hands."
-        actions={
-          <button
-            className="button primary"
-            onClick={() => save.mutate()}
-            disabled={save.isPending}
-          >
-            <Save size={16} />
-            {save.isPending ? 'Saving…' : 'Save preferences'}
-          </button>
-        }
+        eyebrow="YOUR WORKSPACE"
+        title="Settings"
+        description="Connect OpenAI, choose your study preferences and keep your courses safe."
+        actions={saveButton}
       />
+      <nav className="settings-shortcuts" aria-label="Settings sections">
+        <a href="#openai-connection">OpenAI connection</a>
+        <a href="#model-preferences">Models</a>
+        <a href="#generation-defaults">Study preferences</a>
+        <a href="#data-storage">Backups & storage</a>
+      </nav>
       {save.error && <ErrorPanel error={save.error} />}
       <div className="settings-layout">
         <div className="settings-main">
-          <section className="panel">
+          <section className="panel" id="openai-connection">
             <SectionHead title="OpenAI connection" action={<KeyRound size={21} />}>
-              Your key stays on the local backend. Only configured processing runs send course
-              material.
+              Connect once to use AI generation and verification. Your key stays on the local
+              processing service; each run asks before sending course material.
             </SectionHead>
             <KeySetup status={bootstrap.key_status} />
           </section>
-          <section className="panel">
-            <SectionHead
-              title="A specialist for every stage"
-              action={
-                <button
-                  className="button small"
-                  onClick={() => {
-                    setModelsLoaded(true);
-                    models.refetch();
-                  }}
-                  disabled={models.isFetching}
-                >
-                  <RefreshCw size={14} /> {models.isFetching ? 'Discovering…' : 'Discover models'}
-                </button>
-              }
-            >
-              Select models available to your account. Capability errors are reported by the
-              processing pipeline.
+          <ModelPreferences
+            value={settings}
+            configured={bootstrap.key_status.configured}
+            onChange={update}
+          />
+          <section className="panel" id="generation-defaults">
+            <SectionHead title="Default study preferences" action={<SlidersHorizontal size={21} />}>
+              Choose a starting point for new courses. You can tailor these preferences in each
+              course.
             </SectionHead>
-            <datalist id="model-options">
-              {choices.map((id) => (
-                <option value={id} key={id} />
-              ))}
-            </datalist>
-            <div className="form-grid">
-              {[
-                ['interpretation', 'Document interpretation'],
-                ['knowledge', 'Knowledge extraction'],
-                ['generation', 'Flashcard generation'],
-                ['factual', 'Factual verification'],
-                ['pedagogical', 'Pedagogical review'],
-                ['coverage', 'Coverage review'],
-              ].map(([key, label]) => (
-                <label key={key}>
-                  {label}
-                  <input
-                    list="model-options"
-                    value={stageModels[key] ?? ''}
-                    onChange={(e) => update('models', { ...stageModels, [key]: e.target.value })}
-                    placeholder="Choose a supported model ID"
-                  />
-                </label>
-              ))}
-              <label>
-                Reasoning effort
-                <select
-                  value={String(settings.reasoning_effort ?? 'high')}
-                  onChange={(e) => update('reasoning_effort', e.target.value)}
-                >
-                  {['low', 'medium', 'high', 'xhigh', 'max'].map((v) => (
-                    <option key={v}>{v}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Maximum revision attempts
-                <input
-                  type="number"
-                  min="0"
-                  max="5"
-                  value={Number(settings.max_revisions ?? 2)}
-                  onChange={(e) => update('max_revisions', Number(e.target.value))}
-                />
-              </label>
-            </div>
-            {models.error && <ErrorPanel error={models.error} />}
+            <CriteriaForm
+              value={(settings.criteria || {}) as Json}
+              onChange={(value) => update('criteria', value)}
+              compact
+            />
           </section>
           <SchedulerPreferences
             value={(settings.tasks || {}) as Json}
             onChange={(value) => update('tasks', value)}
           />
+          <details className="panel settings-advanced-section">
+            <summary className="settings-section-summary">
+              <SectionHead title="Source importance">
+                Choose how lecture material, exercises and other sources influence coverage.
+              </SectionHead>
+            </summary>
+            <div className="settings-section-content">
+              <p className="field-help">
+                Normal influence (1×) is a balanced starting point. Higher values give a source role
+                more emphasis; they never establish correctness.
+              </p>
+              <div className="range-grid">
+                {(
+                  [
+                    ['lecture', 'Lecture material'],
+                    ['personal_notes', 'Personal notes'],
+                    ['exercises', 'Exercises'],
+                    ['solutions', 'Worked solutions'],
+                    ['reference', 'Other references'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label key={key}>
+                    {label}
+                    <span className="range-control">
+                      <input
+                        type="range"
+                        min="0"
+                        max="3"
+                        step="0.1"
+                        value={role[key] ?? 1}
+                        onChange={(event) =>
+                          update('role_influence', { ...role, [key]: Number(event.target.value) })
+                        }
+                      />
+                      <output>{(role[key] ?? 1).toFixed(1)}×</output>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </details>
+          <details className="panel settings-advanced-section">
+            <summary className="settings-section-summary">
+              <SectionHead title="Document processing">
+                Standard extraction works for most PDFs, scans and notes.
+              </SectionHead>
+            </summary>
+            <div className="settings-section-content">
+              <label>
+                Page image quality
+                <select
+                  value={extraction.render_dpi ?? 144}
+                  onChange={(event) =>
+                    update('extraction', { ...extraction, render_dpi: Number(event.target.value) })
+                  }
+                >
+                  {![96, 144, 200, 300].includes(extraction.render_dpi ?? 144) && (
+                    <option value={extraction.render_dpi}>
+                      {extraction.render_dpi} DPI · custom
+                    </option>
+                  )}
+                  <option value="96">Compact · smaller images</option>
+                  <option value="144">Standard · recommended</option>
+                  <option value="200">Detailed · small text and notation</option>
+                  <option value="300">Maximum · larger files</option>
+                </select>
+              </label>
+              <p className="field-help">
+                Very tall pages are split into overlapping images. Unclear extraction stays visible
+                for review. Higher image quality uses more memory and storage.
+              </p>
+              <details className="settings-details">
+                <summary>Advanced extraction limits</summary>
+                <div className="form-grid advanced-limits">
+                  <label>
+                    Maximum pages per file
+                    <input
+                      type="number"
+                      min="1"
+                      max="10000"
+                      value={extraction.max_pages ?? 2000}
+                      onChange={(event) =>
+                        update('extraction', {
+                          ...extraction,
+                          max_pages: Number(event.target.value),
+                        })
+                      }
+                    />
+                  </label>
+                  {Object.entries(extraction)
+                    .filter(([key]) => !['render_dpi', 'max_pages'].includes(key))
+                    .map(([key, value]) => (
+                      <label key={key}>
+                        {human(key)}
+                        <input
+                          type="number"
+                          min={key === 'overlap_points' ? 0 : 1}
+                          step={key === 'worker_timeout_seconds' ? 'any' : '1'}
+                          value={value}
+                          onChange={(event) =>
+                            update('extraction', {
+                              ...extraction,
+                              [key]: Number(event.target.value),
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                </div>
+              </details>
+            </div>
+          </details>
           <ProcessingPreferences
             value={(settings.processing || {}) as Json}
             prompts={(settings.prompt_overrides || {}) as Record<string, string>}
             onChange={(value) => update('processing', value)}
             onPrompts={(value) => update('prompt_overrides', value)}
           />
-          <section className="panel">
-            <SectionHead title="Thoughtful by default" action={<SlidersHorizontal size={21} />}>
-              Default generation criteria for your courses.
-            </SectionHead>
-            <CriteriaForm
-              value={(settings.criteria || {}) as Json}
-              onChange={(v) => update('criteria', v)}
-            />
-          </section>
-          <section className="panel">
-            <SectionHead title="How sources shape the deck">
-              Source influence guides importance; it never establishes correctness on its own.
-            </SectionHead>
-            <div className="form-grid">
-              {[
-                ['lecture', 'Lecture material'],
-                ['personal_notes', 'Personal notes'],
-                ['exercises', 'Exercises'],
-                ['solutions', 'Worked solutions'],
-                ['reference', 'Other references'],
-              ].map(([key, label]) => (
-                <label key={key}>
-                  {label}
-                  <input
-                    type="number"
-                    min="0"
-                    max="3"
-                    step="0.1"
-                    value={role[key] ?? 1}
-                    onChange={(e) =>
-                      update('role_influence', { ...role, [key]: Number(e.target.value) })
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-          </section>
-          <section className="panel">
-            <SectionHead title="Document processing" />
-            <div className="form-grid">
-              <label>
-                Rendering resolution (DPI)
-                <input
-                  type="number"
-                  min="72"
-                  max="300"
-                  value={extraction.render_dpi ?? 144}
-                  onChange={(e) =>
-                    update('extraction', { ...extraction, render_dpi: Number(e.target.value) })
-                  }
-                />
-              </label>
-              <label>
-                Maximum pages per file
-                <input
-                  type="number"
-                  min="1"
-                  max="10000"
-                  value={extraction.max_pages ?? 2000}
-                  onChange={(e) =>
-                    update('extraction', { ...extraction, max_pages: Number(e.target.value) })
-                  }
-                />
-              </label>
-            </div>
-            <details>
-              <summary>Advanced extraction resource limits</summary>
-              <div className="form-grid advanced-limits">
-                {Object.entries(extraction)
-                  .filter(([key]) => !['render_dpi', 'max_pages'].includes(key))
-                  .map(([key, value]) => (
-                    <label key={key}>
-                      {human(key)}
-                      <input
-                        type="number"
-                        min={key === 'overlap_points' ? 0 : 1}
-                        step={key === 'worker_timeout_seconds' ? 'any' : '1'}
-                        value={value}
-                        onChange={(e) =>
-                          update('extraction', { ...extraction, [key]: Number(e.target.value) })
-                        }
-                      />
-                    </label>
-                  ))}
-              </div>
-            </details>
-            <p className="field-help">
-              Very tall pages are rendered in overlapping segments. Ambiguous extraction stays
-              visible for review.
-            </p>
-          </section>
         </div>
         <aside className="settings-aside">
           <section className="panel">
@@ -588,21 +654,22 @@ export function SettingsPage({ bootstrap }: { bootstrap: Bootstrap }) {
             </div>
             <h3>Your material, your choice</h3>
             <p className="muted">
-              A generation run can send extracted text, source metadata, semantic embedding inputs
-              and rendered source regions to OpenAI. Each run asks for explicit consent.
+              AI processing may send source text, metadata and page images to OpenAI. Each run asks
+              for your consent.
             </p>
             <p className="muted">
-              Local extraction, browsing, editing, review, and export work without transmitting
+              Importing, inspecting, editing, human review and export work locally without sending
               course material.
             </p>
           </section>
-          <section className="panel">
+          <section className="panel" id="data-storage">
             <SectionHead title="Appearance" />
             <label>
               Color theme
               <select
+                aria-label="Color theme"
                 value={String(settings.theme || 'system')}
-                onChange={(e) => update('theme', e.target.value)}
+                onChange={(event) => update('theme', event.target.value)}
               >
                 <option value="system">Follow system</option>
                 <option value="light">Light</option>
@@ -612,8 +679,8 @@ export function SettingsPage({ bootstrap }: { bootstrap: Bootstrap }) {
             <hr />
             <SectionHead title="Data & storage" action={<Database size={19} />} />
             <p className="muted">
-              Back up your courses, original documents, revisions, and settings. API keys are
-              excluded.
+              Create a private backup of your courses, original documents, revisions and
+              preferences. API keys are excluded.
             </p>
             <button className="button" onClick={() => backup.mutate()} disabled={backup.isPending}>
               <Download size={16} />
@@ -624,18 +691,39 @@ export function SettingsPage({ bootstrap }: { bootstrap: Bootstrap }) {
             <BackupRestore />
           </section>
           <DesktopPanel />
-          <section className="panel diagnostics">
-            <SectionHead title="Diagnostics" />
-            {Object.entries(bootstrap.diagnostics || {}).map(([key, value]) => (
-              <div key={key}>
-                <span>{key.replace(/_/g, ' ')}</span>
-                <code>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</code>
-              </div>
-            ))}
-            <p className="field-help">Diagnostics exclude API secrets and document contents.</p>
-          </section>
+          <details className="panel diagnostics">
+            <summary className="settings-section-summary">
+              <SectionHead title="Troubleshooting details" />
+            </summary>
+            <div className="settings-section-content">
+              {Object.entries(bootstrap.diagnostics || {}).map(([key, value]) => (
+                <div key={key}>
+                  <span>{human(key)}</span>
+                  <code>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</code>
+                </div>
+              ))}
+              <p className="field-help">Diagnostics exclude API secrets and document contents.</p>
+            </div>
+          </details>
         </aside>
       </div>
+      {dirty && (
+        <div className="settings-save-bar" role="status">
+          <div>
+            <strong>You have unsaved preferences</strong>
+            <p>
+              Your draft stays here when you switch pages. Save to apply it to new runs. Ctrl/Cmd+S
+              saves.
+            </p>
+          </div>
+          <div className="inline-actions">
+            <button className="button" disabled={save.isPending} onClick={discard}>
+              Discard changes
+            </button>
+            {saveButton}
+          </div>
+        </div>
+      )}
     </>
   );
 }
