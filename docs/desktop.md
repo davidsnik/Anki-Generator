@@ -72,7 +72,7 @@ and retains its explicit layout/equation limitations. See [ingestion](ingestion.
 
 ## Daily use and desktop controls
 
-The course, source correction, evaluation, Tasks and export workflows are the same
+The course, source correction, Tasks and export workflows are the same
 as the existing application. Configure the key in Settings; session-only storage
 is always available. Secure persistence is offered only when the packaged runtime
 can use an available OS credential store. No plaintext-key fallback is created.

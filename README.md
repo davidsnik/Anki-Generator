@@ -2,7 +2,7 @@
 
 A local course-material workspace for building evidence-backed university Anki
 decks. Import sources, map the course, generate and independently check cards,
-correct source interpretations, review original evidence, compare generation strategies,
+correct source interpretations, review original evidence,
 and export a real .apkg.
 
 The Python/FastAPI backend owns documents, credentials, SQLite state and a durable
@@ -106,12 +106,12 @@ the default for all stages; advanced choices retain per-stage overrides and cust
 identifiers. Unknown capabilities remain explicitly unverified. See
 [model selection and compatibility](docs/models.md).
 
-The Evaluation workspace maintains versioned reference datasets, source-linked
-annotations, blind judgments and reproducible paired comparisons. Reports separate
-automatic checks, model judgments, synthetic labels, human-origin labels, recorded
-review independence and unreviewed denominators. New comparison runs require consent; captures of current
-course cards under completed runs are labeled separately. See the
-[GUI workflows](docs/gui-workflows.md) and [evaluation guide](docs/evaluation.md).
+Research benchmarks, model comparisons and annotation packages are developer tools,
+available through `anki-generator benchmark` and `make benchmark`; they run without
+the GUI. Reports keep deterministic, model and human evidence separate, with
+unreviewed cases pending. The ordinary application retains source correction and
+card review. See the [GUI workflows](docs/gui-workflows.md) and
+[developer evaluation guide](docs/evaluation.md).
 
 Independent checks are evidence, not proof. Review assumptions and uncertain
 transcriptions. A revision limit never converts failure into approval.

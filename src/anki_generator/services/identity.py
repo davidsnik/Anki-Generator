@@ -80,8 +80,15 @@ def reconcile(
     vectors = pipeline._vectors(existing, entity_type)
     query_id = f"candidate:{digest((semantic_key, payload))}"
     query = pipeline._vectors([{"id": query_id, **payload}], f"{entity_type}_candidate")[query_id]
-    index = SemanticIndex(vectors)
-    nearest = index.search(query, limit=min(pipeline.options.semantic_candidates, 8))
+    index = SemanticIndex(vectors, measurements=getattr(pipeline, "measurements", None))
+    nearest = index.search(
+        query,
+        limit=min(pipeline.options.semantic_candidates, 8),
+        query_id=query_id,
+        stage="identity",
+        query_kind=f"{entity_type}_candidate",
+        candidate_kind=entity_type,
+    )
     by_id = {item["id"]: item for item in existing}
     candidate_locations = source_locations(payload.get("sources", []))
     candidates = []

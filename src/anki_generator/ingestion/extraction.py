@@ -11,15 +11,17 @@ import json
 import multiprocessing
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
-from time import monotonic
+from time import monotonic, process_time
 from zipfile import BadZipFile, ZipFile
 
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
 from anki_generator.ingestion.contracts import (
     ExtractedPage,
+    ExtractionMeasurements,
     ExtractionOptions,
     ExtractionResult,
     SourceRegion,
@@ -316,6 +318,7 @@ def _extraction_worker(
 ) -> None:
     """Spawn target; a native-parser crash cannot crash the API/job process."""
     options = ExtractionOptions.model_validate(options_data)
+    wall_started, cpu_started = monotonic(), process_time()
     try:
         if os.name == "posix":
             import resource
@@ -326,6 +329,22 @@ def _extraction_worker(
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         result = extract_document(
             Path(path), Path(output), options=options, page_numbers=page_numbers
+        )
+        peak_rss = None
+        if os.name == "posix":
+            peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            peak_rss = int(peak if sys.platform == "darwin" else peak * 1024)
+        measurements = result.measurements or ExtractionMeasurements()
+        result = result.model_copy(
+            update={
+                "measurements": measurements.model_copy(
+                    update={
+                        "worker_wall_seconds": monotonic() - wall_started,
+                        "worker_cpu_seconds": process_time() - cpu_started,
+                        "worker_peak_rss_bytes": peak_rss,
+                    }
+                )
+            }
         )
         (Path(output) / "result.json").write_text(result.model_dump_json(), encoding="utf-8")
     except BaseException as error:

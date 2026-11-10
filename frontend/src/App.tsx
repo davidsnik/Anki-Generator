@@ -7,7 +7,6 @@ import {
   ChevronDown,
   CircleHelp,
   GraduationCap,
-  FlaskConical,
   LayoutDashboard,
   ListTodo,
   Menu,
@@ -24,7 +23,6 @@ import type { Bootstrap } from './services/types';
 import { ErrorPanel, Loading, ToastProvider } from './components/UI';
 import { Dashboard, CreateCourseModal, Welcome } from './pages/Dashboard';
 import { CoursePage } from './pages/Course';
-import { EvaluationPage } from './features/Evaluation';
 import { TaskLiveProvider, GlobalTaskIndicator, useTasks } from './features/tasks/live';
 import { TasksPage, TaskDetailPage } from './features/tasks/TasksPage';
 import { SettingsPage } from './pages/Settings';
@@ -124,10 +122,6 @@ function Workspace() {
               </span>
             )}
           </NavLink>
-          <NavLink to="/evaluation">
-            <FlaskConical size={19} />
-            Evaluation
-          </NavLink>
         </nav>
         <div className="nav-label courses-label">
           <span>YOUR COURSES</span>
@@ -204,13 +198,11 @@ function Workspace() {
                 ? 'Settings'
                 : location.pathname.startsWith('/tasks')
                   ? 'Tasks'
-                  : location.pathname === '/evaluation'
-                    ? 'Evaluation'
-                    : location.pathname.startsWith('/courses/')
-                      ? 'Course workspace'
-                      : location.pathname === '/courses'
-                        ? 'My courses'
-                        : 'Overview'}
+                  : location.pathname.startsWith('/courses/')
+                    ? 'Course workspace'
+                    : location.pathname === '/courses'
+                      ? 'My courses'
+                      : 'Overview'}
             </strong>
           </div>
           <div className="topbar-right">
@@ -238,7 +230,6 @@ function Workspace() {
             <Route path="/settings" element={<SettingsPage bootstrap={data} />} />
             <Route path="/tasks" element={<TasksPage courses={data.courses} />} />
             <Route path="/tasks/:taskId" element={<TaskDetailPage />} />
-            <Route path="/evaluation" element={<EvaluationPage bootstrap={data} />} />
             <Route
               path="*"
               element={

@@ -266,7 +266,16 @@ def apply_corrections(
         if any(c.get("origin", "human") == "human" for c in latest.values())
         else "automatic_unverified"
     )
-    if pages and all(p.get("status") == "complete" for p in pages.values()):
+    incomplete = (
+        result.get("status") in {"partial", "failed"}
+        or len(pages) < result.get("total_pages", len(pages))
+        or bool(result.get("unmapped_office_math"))
+    )
+    if incomplete:
+        # Verified text on available pages cannot establish coverage of omitted
+        # pages/equations. Also withdraw any stale cached "complete" overlay.
+        result["effective_status"] = "failed" if result.get("status") == "failed" else "partial"
+    elif pages and all(p.get("status") == "complete" for p in pages.values()):
         result["effective_status"] = "complete"
     result["correction_ids"] = [c["id"] for c in latest.values()]
     return result

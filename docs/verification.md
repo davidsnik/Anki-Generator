@@ -1,11 +1,60 @@
 # Implementation verification
 
-Updated 9 November 2026. This report separates the current UX/development checks,
-desktop release checks,
+Updated 10 November 2026. This report separates the current private-course investigation,
+UX/development checks, desktop release checks,
 historical application checks, actual disposable Anki imports and validation
 that has not been performed. Controlled model responses and synthetic labels do
 not establish accuracy on unseen university courses. No live paid OpenAI evaluation
 or independently reviewed multi-subject quality result is recorded here.
+
+## Private-course offline validation — 9–10 November 2026
+
+The user explicitly restricted API experiments to offline execution. The supplied
+private ZIP was streamed into an ignored, hash-bound dataset: **824 files**, including
+**812 PDFs**, two raster images and ten unsupported script/notebook/video files.
+There are **81 path-inferred course/subject groups**, not 81 independently confirmed
+courses. Unsupported files were inventoried and never executed. Two possible
+within-document question/solution relationships remain unconfirmed filename hints.
+
+The actual developer `benchmark profile` command inspected **7,140 page geometries**
+across all **812 PDFs**, with no failed PDF units. Native-text/image/drawing counters
+sample **2,228 first/middle/last pages**: **2,010** have no native text, and **12**
+contain **47** non-whitespace control characters. All-page geometry includes **495**
+pages taller than 1,600 points and **14** wider than 799 points. Absence of native
+text does not establish handwriting, and sampled content counters are not all-page
+transcription accuracy.
+
+Real before/after investigation addressed unrelated PDF tile hints, missing
+mathematical-font uncertainty and partial-coverage correction promotion. Native
+Office equation recovery and symbolic-domain regressions use separately authored
+controls. No real DOCX/PPTX was present in the supplied archive. The research GUI
+was removed; developer commands reuse production services, and ordinary source/card
+review and legacy stored evaluation data remain available.
+
+| Executed check | Result and scope |
+| --- | --- |
+| Untouched baseline `make check` | **496 Python passed / 5 opt-in frozen checks skipped**, **81 frontend** and **23 desktop-shell** tests; lint/format/type checks passed. Baseline source retained from commit `02b7857b097436472f58834b983d0748b810d0f3` before production edits. |
+| Integrated `make check` | **591 Python passed / 6 opt-in frozen checks skipped** in 165.53 seconds, **81 frontend** in 15 files and **23 shell** tests; lint/format/strict TypeScript passed. Later benchmark-boundary additions are checked separately and in the final copied-backend suite. |
+| `make test-browser` | **6/6 passed in 51.8 seconds**, including concurrent courses, source correction/crops, card review/editing, backups, settings, APKG and mobile navigation. Source/review screenshots were inspected; research navigation is absent. Providers are controlled offline test doubles. |
+| Developer smoke and profile CLI | Actual `make benchmark`, `make benchmark-smoke` and full private archive `benchmark profile` passed. Smoke uses synthetic text with real local extraction, not simulated quality results. |
+| Final benchmark safety/instrumentation regressions | **95 passed in 9.03 seconds**; later blind retrieval-context projection adds one test, with **38 review tests passed** after that change. Actual descendant-process cleanup, source-ID/path bounds, reference-inventory hash binding, portable identity scopes, real ranking capture and export approval gates are covered. Global Ruff/format passed for **206 Python files**. |
+| Corrected final fidelity pair | **16 sources / 100 page-image cases / 240 regions**, with native text and region geometry preserved on **100/100**. Suspicious-text warnings increased **2 → 6 pages** while retaining raw symbols. Configuration v3 corrects the development poster's earlier held-out mislabel; v2 outputs remain preserved as superseded evidence. Four intentionally selected partial documents remain partial. |
+| Complete supplied course collections | Actual durable runs on **24 PDFs / 152 pages**, three collections, two repetitions per revision: **12/12 jobs completed**. The improved repeats record **24 extraction hits**, no new parser work. Single-observation runtimes and resource scope are in [performance](performance.md#real-private-course-extraction--9-november-2026). |
+| Actual developer reporting/review commands | Reference examples validated; source-linked blind review exported with **100 pending annotations**, then validated/imported without manufacturing judgments. Four standalone reports, per-run JSON metrics and paired Markdown/JSON comparisons generated. `make benchmark-report`, `make benchmark-engineering` and `make eval` executed successfully. |
+| Native Word frozen failure investigation | Initial copied-backend suite: **1 failed / 631 passed**, exposing missing-page output for native DOCX while PPTX/PDF passed. python-docx synthesized blank header/footer parts through a missing frozen intermediate directory. A directory-only diagnostic copy passed the unchanged case; production now reads existing parts without creating headers/settings. **50 source checks passed**, including four creation-forbidden cases; the rebuilt copied backend passed the exact failed case in **4.14 seconds**. The final full corrected suite is recorded separately. |
+| Final complete corrected Python suite | `ANKI_TEST_FROZEN_BACKEND=/tmp/anki-real-validation-release-fixed/backend/anki-generator-backend uv run --locked --offline --extra anki-integration pytest -q --tb=short`: **636 passed, no skips, in 213.84 seconds**, including **6 actual frozen checks** and **11 official Anki core cases**. One existing Starlette/httpx deprecation warning remains. |
+| Final source checks | Ruff/format passed for **207 Python files** after the Word fix; `git diff --check` passed. The final GUI source freeze passed strict TypeScript, frontend/desktop formatting, **81 frontend tests** and **23 shell tests**. No GUI source changed afterward. |
+| Corrected desktop build and actual AppImage | Actual `make package PACKAGE_ARGS=--skip-checks` rebuilt the backend/AppImage/RPM after the Word fix. Actual `make test-packaged` passed all **four GUI harnesses** on the corrected AppImage: launch/authentication/persistence, generation/APKG/concurrency, lifecycle/recovery and native unsaved-draft keep/discard/restart/reload. Sandboxing/context isolation remained enabled and renderer Node disabled. Final rendered Tasks/source/review/screens were inspected; research navigation is absent. |
+| Final payload provenance/privacy | **430 backend files** match across frozen build, copied test bundle, Electron payload and extracted AppImage. **502 unpacked files**, **520 extracted AppImage files** and **10 ASAR members** have no exact match against **824 distinct private source/archive hashes**, and no private paths appear in the PyInstaller input table. The original ZIP SHA remains unchanged. RPM postprocessing changes **97 ELF files**, so this is not a claim of installed-RPM byte identity; installed runtime checks are separate. |
+| Actual installed Fedora 44 RPM | Final RPM installed and `rpm -V` passed in a disposable container. Actual renderer/API native DOCX extraction retained the assumption and fraction, `needs_review`, extractor 3 and measured parser resources; no packaging-directory workaround was present. Manual card/math rendering, restart persistence, missing-key behavior and absent research navigation passed with zero renderer errors. A live UID-1000 renderer retained `NoNewPrivs=1`, `Seccomp=2` and no sandbox-disabling flag. **405 non-ELF resources** match unpacked bytes; all **97 changed files** are RPM-processed ELF files. All **502 installed files** had zero exact matches against private hashes. |
+
+Private manifests, immutable source/harness snapshots, original-coordinate regions,
+raw results, provisional reference readings and standalone reports are under ignored
+`data/benchmarks/`. Six assistant-authored reference examples from three original
+regions remain **model-origin, unreviewed and incomplete**. No human acceptance,
+transcription error rate, live-model comparison or observed human review time is
+claimed. Copied-release results are recorded separately; historical checks remain
+separate.
 
 ## UX, model selection and Make workflow — 9 November 2026
 

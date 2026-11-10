@@ -234,6 +234,85 @@ def test_frozen_formats_authentication_resources_and_persistence(frozen_factory)
     restored.stop()
 
 
+def test_frozen_office_equations_and_parser_measurements(frozen_factory, tmp_path):
+    """The real parser children retain OMML and honest numeric observations."""
+    import pymupdf
+    from docx import Document as WordDocument
+    from lxml import etree
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    math_namespace = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+
+    def fraction():
+        return etree.fromstring(
+            f'<m:oMath xmlns:m="{math_namespace}"><m:f>'
+            "<m:num><m:r><m:t>1</m:t></m:r></m:num>"
+            "<m:den><m:r><m:t>x</m:t></m:r></m:den>"
+            "</m:f></m:oMath>"
+        )
+
+    word = tmp_path / "synthetic-equation.docx"
+    document = WordDocument()
+    paragraph = document.add_paragraph("Assume x > 0. Then f(x) = ")
+    paragraph._p.append(fraction())
+    document.save(word)
+    powerpoint = tmp_path / "synthetic-equation.pptx"
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    paragraph = slide.shapes.add_textbox(
+        Inches(1), Inches(1), Inches(6), Inches(2)
+    ).text_frame.paragraphs[0]
+    paragraph.text = "Assume x > 0. Then f(x) = "
+    wrapper = etree.Element("{http://schemas.microsoft.com/office/drawing/2010/main}m")
+    wrapper.append(fraction())
+    paragraph._p.append(wrapper)
+    presentation.save(powerpoint)
+    pdf = tmp_path / "synthetic-render-measurement.pdf"
+    with pymupdf.open() as document:
+        document.new_page().insert_text((20, 40), "Assume x > 0 before taking a reciprocal.")
+        document.save(pdf)
+    sources = [word, powerpoint, pdf]
+    original_bytes = {path: path.read_bytes() for path in sources}
+
+    backend = frozen_factory().startup()
+    backend.json("PATCH", "/api/settings", json={"extraction": {"office_rendering": "native"}})
+    course = backend.course("Frozen equation fidelity and parser observations")
+    documents = [backend.upload(course, path) for path in sources]
+    result = backend.result(backend.run(course))
+    assert result["progress"]["documents"] == 3
+    for source, document in zip(sources, documents, strict=True):
+        pages = backend.json("GET", f"/api/documents/{document['id']}/pages")
+        assert pages and "Assume x > 0" in pages[0]["text"]
+        with sqlite3.connect(backend.data / "application.sqlite3") as database:
+            extraction = json.loads(
+                database.execute(
+                    "SELECT extraction FROM documents WHERE id=?", (document["id"],)
+                ).fetchone()[0]
+            )
+        assert extraction["extractor_version"] == "3"
+        measurements = extraction["measurements"]
+        assert measurements["worker_wall_seconds"] > 0
+        assert measurements["worker_cpu_seconds"] > 0
+        assert measurements["worker_peak_rss_bytes"] is None or (
+            measurements["worker_peak_rss_bytes"] > 0
+        )
+        if source.suffix == ".pdf":
+            assert 0 < measurements["pdf_render_seconds"] <= measurements["worker_wall_seconds"]
+            assert measurements["pdf_regions_rendered"] == sum(
+                len(page["regions"]) for page in pages
+            )
+        else:
+            assert r"\frac{1}{x}" in pages[0]["text"]
+            assert extraction["status"] == "needs_review"
+            assert any("OMML" in warning for warning in extraction["warnings"])
+            assert measurements["pdf_render_seconds"] is None
+            assert measurements["pdf_regions_rendered"] is None
+            assert extraction["pages"][0]["coordinate_system"] == "synthetic-preview-pixels"
+        assert source.read_bytes() == original_bytes[source]
+    backend.stop()
+
+
 def test_frozen_concurrent_sdk_jobs_symbolic_workers_and_anki(frozen_factory, tmp_path):
     with ControlledResponsesServer() as provider:
         backend = frozen_factory(provider=provider).startup()

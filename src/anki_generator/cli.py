@@ -5,11 +5,13 @@ from typing import Annotated
 
 import typer
 
+from anki_generator.benchmark.cli import app as benchmark_app
 from anki_generator.config import load_settings
 from anki_generator.ingestion.discovery import discover_documents
 from anki_generator.output import validate_output_directory, write_manifest
 
 app = typer.Typer(no_args_is_help=True, add_completion=False, pretty_exceptions_enable=False)
+app.add_typer(benchmark_app, name="benchmark", help="Developer-only, opt-in quality experiments.")
 
 
 @app.callback()

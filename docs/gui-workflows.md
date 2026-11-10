@@ -94,31 +94,13 @@ chunks, vision and embedding batches, coverage repair rounds and identity
 thresholds. Advanced per-stage prompt overrides affect new runs after saving.
 Each run retains its effective configuration for reproducibility.
 
-## Build a reusable evaluation benchmark
+## Developer evaluation
 
-Open **Evaluation**, create or import a versioned JSON dataset, link the actual
-source course, and declare its provenance. Add expected knowledge, assumptions,
-competencies and original source locations. Reference examples can be accepted or
-deliberately flawed, with explicit synthetic, model or human labels. An independent
-human-reference dataset requires its reviewer's name; the application cannot
-perform or infer that independent review.
-
-Compare two configurations in isolated new course copies, or capture the current
-course cards under completed runs without additional model calls. Captures require
-matching source roles, corrections and crop revisions, and are labeled separately
-from isolated pipeline output. New model runs require consent. Cases are randomized and paged in blind review;
-configuration labels remain hidden until **Reveal comparison results**. Record
-quality dimensions, reference targets, rationale, reviewer, provenance and whether
-the original evidence was independently checked. Unassessed dimensions remain
-unknown. Synthetic labels test infrastructure and never become human evidence.
-
-The report separates automatic structural/source-location checks, model judgments,
-independent human judgments, synthetic labels and unreviewed denominators. It also
-records per-topic failures, paired comparisons, configuration, usage and limits.
-Download the report for the full immutable snapshots. Save a reviewed human case
-to the benchmark only through its explicit promotion action; it creates a new
-dataset version and does not rewrite earlier experiments. Use separately held-out,
-domain-reviewed references before making quality claims.
+Benchmarks, research annotations, model comparisons and performance reports run
+through the CLI, outside this interface. Ordinary card review and source correction
+remain available here. The earlier research route is retired; existing evaluation
+records remain in application backups for compatibility. See the
+[developer evaluation guide](evaluation.md).
 
 ## Check identity and export safely
 

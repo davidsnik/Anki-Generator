@@ -4,7 +4,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { selectionBounds, SourceWorkbench } from './SourceWorkbench';
 import { ExportPreview } from './ExportPreview';
-import { datasetPayload, ReportValues } from './Evaluation';
 import { BulkReview, revisionFields, useReviewKeys, VerificationFindings } from './CardReview';
 import { Pagination } from './Pagination';
 import { ProcessingPreferences } from './ProcessingPreferences';
@@ -38,28 +37,6 @@ describe('source selection coordinates', () => {
   it('rejects non-finite scale and zero-area selections', () => {
     expect(selectionBounds([0, 0], [20, 20], 0, 600, 800)).toBeNull();
     expect(selectionBounds([20, 20], [20, 20], 1, 600, 800)).toBeNull();
-  });
-});
-it('serializes only the strict dataset input contract, preserving explicit synthetic provenance', () => {
-  expect(
-    datasetPayload({
-      id: 'read-only',
-      created_at: 'now',
-      schema_version: '1',
-      name: 'fixture',
-      provenance: 'synthetic',
-      reviewer: 'Controlled browser',
-      reference_concepts: [],
-      version: 3,
-      source_manifest: {},
-    }),
-  ).toEqual({
-    schema_version: '1',
-    name: 'fixture',
-    provenance: 'synthetic',
-    reviewer: 'Controlled browser',
-    reference_concepts: [],
-    version: 3,
   });
 });
 it('identifies changed card fields, tags and source evidence separately', () => {
@@ -299,20 +276,6 @@ it('incompatible backups remain blocked even after typing the confirmation', asy
   expect(screen.getByRole('button', { name: 'Restore validated backup' })).toBeDisabled();
 });
 
-it('renders evaluation denominators and unknown results without implying unmeasured success', () => {
-  render(
-    <ReportValues
-      value={{
-        review_progress: { numerator: 0, denominator: 4, value: 0 },
-        acceptance: { numerator: 0, denominator: 0, value: null },
-      }}
-    />,
-  );
-  expect(screen.getByText('0 / 4')).toBeVisible();
-  expect(screen.getByText('0%')).toBeVisible();
-  expect(screen.getByText('0 / 0')).toBeVisible();
-  expect(screen.getByText('Not measured')).toBeVisible();
-});
 it('labels bounded symbolic calculations separately from model judgments and displays their limits', () => {
   render(
     <VerificationFindings

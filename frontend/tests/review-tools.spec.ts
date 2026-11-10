@@ -1,9 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-test('corrections, coordinate crops, bulk revisions, blind evaluation and scalable browsing integrate with the real local API', async ({
+test('corrections, coordinate crops, bulk revisions and scalable browsing integrate with the real local API', async ({
   page,
 }) => {
   test.setTimeout(180000);
+  await page.goto('/');
+  await expect(page.getByRole('link', { name: 'My courses' })).toBeVisible();
+  await expect(page.getByRole('link', { name: /evaluation|benchmark|experiment/i })).toHaveCount(0);
+  await page.goto('/evaluation');
+  await expect(page.getByRole('heading', { name: 'A fresh start' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create benchmark' })).toHaveCount(0);
   await page.goto('/');
   const bootstrap = await (await page.request.get('/api/bootstrap')).json();
   const headers = { 'X-CSRF-Token': bootstrap.csrf_token };
@@ -20,7 +26,6 @@ test('corrections, coordinate crops, bulk revisions, blind evaluation and scalab
     })
   ).json();
   const coursePath = `/courses/${course.id}`;
-  const benchmarkName = `Synthetic geometry benchmark ${course.id}`;
   await page.goto(`${coursePath}/documents`);
   await page.locator('input[type=file]:not([webkitdirectory])').setInputFiles({
     name: 'misread-math.pdf',
@@ -34,7 +39,6 @@ test('corrections, coordinate crops, bulk revisions, blind evaluation and scalab
   );
   await page.getByRole('button', { name: 'Extract locally', exact: true }).click();
   const run = await (await runResponse).json();
-  let captureRunId = run.id;
   await expect
     .poll(async () => (await (await page.request.get(`/api/runs/${run.id}`)).json()).status, {
       timeout: 60000,
@@ -121,7 +125,6 @@ test('corrections, coordinate crops, bulk revisions, blind evaluation and scalab
   );
   await page.getByRole('button', { name: 'Extract locally', exact: true }).click();
   const snapshotRun = await (await snapshotResponse).json();
-  captureRunId = snapshotRun.id;
   await expect
     .poll(
       async () => (await (await page.request.get(`/api/runs/${snapshotRun.id}`)).json()).status,
@@ -151,53 +154,6 @@ test('corrections, coordinate crops, bulk revisions, blind evaluation and scalab
     .getByRole('button', { name: 'Restore selected revision', exact: true })
     .click();
   await expect(page.locator('.toast')).toContainText('Earlier content restored');
-  await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
-  await page.goto('/evaluation');
-  await page.getByRole('button', { name: 'Create benchmark', exact: true }).click();
-  await page.getByLabel('Dataset name').fill(benchmarkName);
-  await page.getByLabel('Reference provenance').selectOption('synthetic');
-  await page.getByLabel('Linked source course').selectOption(course.id);
-  await page.getByRole('button', { name: 'Add reference target', exact: true }).click();
-  await page.getByLabel('Target label').fill('Right-angle assumption');
-  await page.getByLabel('Topic', { exact: true }).fill('Geometry');
-  await page.getByLabel('Supporting source document').selectOption(doc.id);
-  await page.getByLabel('Supporting quotation').fill('For a right triangle, a^2 + b^2 = c^2.');
-  await page.getByRole('button', { name: 'Save dataset', exact: true }).click();
-  await expect(page.locator('.toast')).toContainText('Reference dataset saved');
-  await page
-    .locator('.evaluation-datasets > section')
-    .filter({ has: page.getByRole('heading', { name: benchmarkName, exact: true }) })
-    .getByRole('button', { name: 'Compare configurations' })
-    .click();
-  for (const select of await page.getByLabel('Reuse completed run').all())
-    await select.selectOption(captureRunId);
-  await page.getByRole('button', { name: 'Create paired experiment', exact: true }).click();
-  await expect(
-    page.getByText('Blind review hides model/configuration labels.', { exact: false }),
-  ).toBeVisible();
-  await expect(page.getByText('Blind case', { exact: false }).first()).toBeVisible();
-  await page.getByLabel('Judgment provenance').selectOption('synthetic');
-  await page.getByLabel('Reviewer name').fill('Controlled browser test');
-  await page
-    .getByLabel('Evidence and rationale')
-    .fill(
-      'Synthetic test label exercises storage and denominators; no independent human quality claim.',
-    );
-  await page.getByRole('button', { name: 'Save quality judgment', exact: true }).click();
-  await expect(page.locator('.toast')).toContainText('Judgment saved');
-  await expect(
-    page.getByRole('button', { name: 'Save reviewed example to benchmark' }),
-  ).toBeDisabled();
-  await page.getByRole('button', { name: 'Reveal comparison results and configurations' }).click();
-  await expect(
-    page
-      .getByRole('heading', {
-        name: 'Human results and explicit unreviewed denominators',
-      })
-      .first(),
-  ).toBeVisible();
-  await page.getByRole('dialog').evaluate((el) => (el.scrollTop = 0));
-  await page.screenshot({ path: '/tmp/anki-ui-evaluation.png', animations: 'disabled' });
   await page.getByRole('button', { name: 'Close dialog', exact: true }).click();
   const requests: string[] = [];
   page.on('request', (r) => {

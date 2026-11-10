@@ -41,7 +41,8 @@ create a course, import/categorize, select criteria, process, inspect, review an
 - Versioned evaluation datasets and annotations, structured reference concepts and
   card examples, isolated paired configurations, blind/randomized review,
   provenance-aware human/model/synthetic judgments, reusable reviewed examples,
-  comparison reports and explicit unreviewed denominators.
+  comparison reports and explicit unreviewed denominators. Research workflows use
+  developer CLI tools and standalone reports, outside the ordinary application GUI.
 - Original/effective transcription inspection, append-only corrections and human
   precedence, rendered mathematical previews, original-coordinate high-resolution
   region selection with zoom/pan, saved card/concept evidence and targeted retries.
@@ -127,8 +128,11 @@ stated denominators; absence of a numerical counterexample is not proof.
 
 Model agreement and supported symbolic calculations are not general formal proof.
 Live accuracy still needs paid-provider evaluation and independently reviewed
-multi-subject university sources. The supplied evaluation references and measured
-engineering workloads are explicitly synthetic. Optional Office conversion still
+multi-subject university sources. The initial committed evaluation references and
+engineering workloads are synthetic. Private real-course inventories, extraction
+cycles and local measurements are separate ignored artifacts; source-grounded
+assistant annotations remain provisional and human judgments remain pending.
+Optional Office conversion still
 requires original-page review; native fallback cannot promise full equation/chart
 layout. See [ingestion](ingestion.md), [mathematical verification](mathematical-verification.md)
 and [performance](performance.md).

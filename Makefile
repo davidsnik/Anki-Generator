@@ -19,6 +19,7 @@ UNPACKED ?= $(CURDIR)/dist/desktop/linux-unpacked
 .PHONY: help setup setup-browser dev dev-browser run run-browser test test-backend test-frontend \
 	test-desktop test-browser test-e2e test-anki test-frozen test-packaged lint \
 	format format-check typecheck check build build-web package clean doctor
+.PHONY: benchmark benchmark-smoke benchmark-report benchmark-engineering eval
 
 help: ## Show everyday commands and release checks (default)
 	@awk 'BEGIN {FS = ":.*## "; print "Anki Generator development\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-19s %s\n", $$1, $$2} END {print "\nGuide: docs/development.md. Overrides: UV, PNPM, NODE; options: ARGS, PYTEST_ARGS, PACKAGE_ARGS."}' $(MAKEFILE_LIST)
@@ -104,3 +105,17 @@ clean: ## Remove generated outputs; preserve user data and development dependenc
 
 doctor: ## Check required tools and explain optional Fedora/desktop dependencies
 	@./scripts/workflow.sh doctor $(ARGS)
+
+benchmark: ## Opt-in developer dataset/experiment tools (ARGS='--help' by default)
+	@$(TOOLCHAIN) "$(UV)" run --locked anki-generator benchmark $(if $(strip $(ARGS)),$(ARGS),--help)
+
+eval: benchmark ## Alias for developer benchmark commands; no GUI or paid default
+
+benchmark-smoke: ## Exercise synthetic inventory/extraction/reporting without API calls
+	@$(TOOLCHAIN) "$(UV)" run --locked anki-generator benchmark smoke $(ARGS)
+
+benchmark-report: ## Generate a private standalone report (ARGS='<result.json> --output <report.md>')
+	@$(TOOLCHAIN) "$(UV)" run --locked anki-generator benchmark report $(ARGS)
+
+benchmark-engineering: ## Measure offline synthetic math/vector-cache controls (ARGS='--output <path>')
+	@$(TOOLCHAIN) "$(UV)" run --locked anki-generator benchmark engineering $(ARGS)

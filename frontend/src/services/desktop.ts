@@ -37,7 +37,7 @@ export function desktopRoute(route: string) {
   return (
     typeof route === 'string' &&
     !route.startsWith('//') &&
-    /^\/(?:tasks|courses|settings|evaluation)?(?:[/?#]|$)/.test(route) &&
+    /^\/(?:tasks|courses|settings)?(?:[/?#]|$)/.test(route) &&
     !route.includes('\\') &&
     !/[\u0000-\u001f]/.test(route)
   );

@@ -346,8 +346,9 @@ class QualityStages:
                 ),
             )
             if candidate.mathematical:
-                with self._local_work():
+                with self._measure("symbolic", operation="bounded_calculation"), self._local_work():
                     checks = [check_identity(check) for check in candidate.symbolic_checks]
+                self._count("symbolic", "calculations", len(checks))
                 if checks:
                     verdict = (
                         "revise"

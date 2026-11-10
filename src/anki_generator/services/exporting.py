@@ -9,6 +9,7 @@ import re
 import shutil
 import tempfile
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import genanki
@@ -18,6 +19,7 @@ from sqlalchemy.orm import Session
 from anki_generator.database.entities import Card, Course, Document, ExportRecord, Page, new_id
 from anki_generator.database.pipeline_entities import ExportSnapshot
 from anki_generator.domain import ExportInput
+from anki_generator.services.measurements import PipelineMeasurements
 from anki_generator.services.records import card_view, require
 from anki_generator.services.storage import safe_storage_path
 
@@ -136,6 +138,25 @@ def selected_cards(session: Session, course_id: str, card_ids: list[str] | None)
 
 
 def create_export(
+    session: Session,
+    data_root: Path,
+    course_id: str,
+    values: ExportInput,
+    *,
+    measurements: PipelineMeasurements | None = None,
+) -> ExportRecord:
+    span = (
+        measurements.measure("export", operation=values.format) if measurements else nullcontext()
+    )
+    with span:
+        result = _create_export(session, data_root, course_id, values)
+    if measurements is not None:
+        measurements.count("export", "completed_exports")
+        measurements.count("export", "cards_exported", result.card_count)
+    return result
+
+
+def _create_export(
     session: Session, data_root: Path, course_id: str, values: ExportInput
 ) -> ExportRecord:
     course: Course = require(session, Course, course_id)

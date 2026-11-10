@@ -19,7 +19,9 @@ course-to-Anki behavior. APKG tests inspect real ZIP/SQLite/media/templates/IDs.
 Frontend unit tests cover mathematical/cloze rendering, presets and configuration,
 coordinate inversion, typing-safe shortcuts, explicit bulk revision guards,
 semantic field diffs, transcription replacement permission, targeted retry consent,
-evaluation denominators, identity/export blocking and restore validation. Model
+identity/export blocking and restore validation. Developer Python tests cover
+origin-separated evaluation denominators, source/case binding, annotation history,
+retrieval/fidelity metrics and benchmark snapshots. Model
 tests cover credential-scoped discovery/cache invalidation, exact documented
 capabilities, unknown/custom IDs, inaccessible selections, preflight before job
 creation, custom embedding dimensions and real SDK transport to a local fixture.
@@ -74,8 +76,8 @@ exercise bulk source roles, guarded edits, persisted filters, course switching a
 narrow layouts. The additional evidence/review workflow uses the deliberately wrong invisible OCR
 sign in a genuine PDF, corrects its transcription through the GUI, saves a zoomed
 original-coordinate crop, attaches it to a card, applies revision-aware bulk tags,
-compares/restores content, captures a fresh source manifest for a synthetic blind
-evaluation, pages/searches 1,500 cards, crosses a page boundary with review keys,
+compares/restores content, confirms research navigation is absent,
+pages/searches 1,500 cards, crosses a page boundary with review keys,
 and validates/restores a real backup with recovery download. Synthetic labels are
 declared synthetic and do not imply independent expert approval.
 The default base URL is http://127.0.0.1:8766; ANKI_E2E_BASE_URL overrides it.
@@ -87,7 +89,7 @@ Tests save failure artifacts under ignored frontend/test-results/.
 
 The implementation workflow also saved viewport screenshots under
 `/tmp/anki-ui-*.png`; these are local QA artifacts rather than required repository
-fixtures. Desktop source selection/transcription, compact evaluation denominators,
+fixtures. Desktop source selection/transcription,
 restore confirmation/recovery, and mobile source/card layouts were inspected.
 
 ## Packaged Linux desktop
@@ -187,7 +189,7 @@ in-memory `OPENAI_API_KEY`:
     uv run --locked python tests/semantic_benchmark.py --live --consent --output /tmp/semantic.json
 
 Its author-created reference cases are synthetic. This live command was not run in
-the implementation session. GUI paired experiments and portable reference datasets
+the implementation session. Developer CLI experiments and portable reference datasets
 are documented in [evaluation](evaluation.md); independent human judgments must
 be supplied and labeled rather than synthesized from model opinions.
 
@@ -222,3 +224,25 @@ Task pages and events are bounded; simultaneous submission and legacy migration
 cases exercise actual SQLite transactions. The concurrent browser workflow uses
 synthetic courses and a gated provider; it does not bypass the production scheduler.
 See [tasks](tasks.md) for usage and [resource management](resource-management.md) for limits.
+
+## Developer benchmark regression and offline smoke
+
+```sh
+uv run --locked pytest tests/test_benchmark_runner.py tests/test_benchmark_profile.py tests/test_benchmark_review_metrics.py tests/test_benchmark_engineering.py tests/test_developer_measurements.py
+make benchmark-smoke
+```
+
+Tests use synthetic archives/PDF/Office files, temporary private directories and
+the actual bounded parser/durable runner. They cover traversal/link/expansion
+rejection, stable manifests, immutable source/harness snapshots, changed-source
+failure, live-call opt-in gates, interruption cleanup, portable case references,
+provenance/unknown denominators, literal transcription metrics, explicit relevance,
+observed human effort and paired-input guards. None needs a real key.
+
+Source-fidelity regressions cover localized PDF lines without moving existing tile
+geometry, unsupported math-font controls, native OOXML structures and unverified
+Office conversion supplements, partial-coverage preservation, human correction
+history, parser/render measurements and cache reuse. The opt-in copied frozen
+suite includes these native Office equations and actual parser measurements.
+See [developer evaluation](evaluation.md) for private real-source experiments;
+they remain opt-in and outside ordinary CI and GUI workflows.

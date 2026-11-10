@@ -109,6 +109,7 @@ it('accepts only local application navigation and unsubscribes all narrow bridge
     '//evil.example',
     '/settings\\evil',
     '/tasks\nmalicious',
+    '/evaluation',
   ])
     expect(desktopRoute(route)).toBe(false);
   expect(desktopRoute('/settings#desktop-diagnostics')).toBe(true);

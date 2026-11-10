@@ -76,6 +76,7 @@ class OpenAIProvider:
         job_id: str = "interactive",
         checkpoint: Callable[[], None] | None = None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
+        on_measurement: Callable[[dict[str, Any]], None] | None = None,
         request_timeout: float = 180.0,
     ):
         if not api_key:
@@ -94,6 +95,7 @@ class OpenAIProvider:
         self.job_id = job_id
         self.checkpoint = checkpoint
         self.on_event = on_event
+        self.on_measurement = on_measurement
 
     def with_resources(
         self,
@@ -102,12 +104,40 @@ class OpenAIProvider:
         *,
         checkpoint: Callable[[], None] | None = None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
+        on_measurement: Callable[[dict[str, Any]], None] | None = None,
     ) -> OpenAIProvider:
         """Bind a job without mutating a possibly shared injected SDK transport."""
         bound = copy.copy(self)
         bound.resources, bound.job_id = resources, job_id
         bound.checkpoint, bound.on_event = checkpoint, on_event
+        bound.on_measurement = on_measurement
         return bound
+
+    def _measured_sdk_call(self, call: Callable[[], Any], *, operation: str) -> Any:
+        """Count actual SDK invocations after request preparation/admission.
+
+        This measures client-call completion, not remote acceptance or billing.
+        Failed/incomplete responses may incur unreported usage. No request bodies,
+        exception details, tokens or credentials are sent to the optional sink.
+        """
+        if self.on_measurement is None:
+            return call()
+        started, cpu = time.perf_counter(), time.thread_time()
+        outcome = "failed"
+        try:
+            result = call()
+            outcome = "completed"
+            return result
+        finally:
+            self.on_measurement(
+                {
+                    "kind": "api_attempt",
+                    "operation": operation,
+                    "outcome": outcome,
+                    "wall_seconds": time.perf_counter() - started,
+                    "thread_cpu_seconds": time.thread_time() - cpu,
+                }
+            )
 
     def close_owned_client(self) -> bool:
         """Close internally created SDK sockets; injected/shared clients stay owned by callers."""
@@ -215,7 +245,11 @@ class OpenAIProvider:
 
     def models(self) -> list[str]:
         values, _ = self._request(
-            lambda: list(self.client.models.list()), model="models-list", operation="models"
+            lambda: self._measured_sdk_call(
+                lambda: list(self.client.models.list()), operation="models"
+            ),
+            model="models-list",
+            operation="models",
         )
         identifiers = [getattr(item, "id", None) for item in values]
         if any(not isinstance(identifier, str) or not identifier for identifier in identifiers):
@@ -224,7 +258,11 @@ class OpenAIProvider:
 
     def retrieve_model(self, model: str) -> str:
         value, _ = self._request(
-            lambda: self.client.models.retrieve(model), model=model, operation="model-access"
+            lambda: self._measured_sdk_call(
+                lambda: self.client.models.retrieve(model), operation="model-access"
+            ),
+            model=model,
+            operation="model-access",
         )
         return value.id
 
@@ -315,8 +353,11 @@ class OpenAIProvider:
                     }
                 )
                 del raw, encoded
-            return self.client.responses.parse(
-                **kwargs, input=[{"role": "user", "content": content}]
+            return self._measured_sdk_call(
+                lambda: self.client.responses.parse(
+                    **kwargs, input=[{"role": "user", "content": content}]
+                ),
+                operation=stage,
             )
 
         response, attempt = self._request(physical_request, model=model, operation=stage)

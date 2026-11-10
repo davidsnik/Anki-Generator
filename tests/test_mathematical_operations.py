@@ -87,3 +87,40 @@ def test_unsupported_assumptions_advanced_claims_and_unsafe_syntax_stay_uncertai
     result = run("optimization_stationary", "x**3", "0")
     assert result["verdict"] == "pass"
     assert "optimality is not established" in result["reason"]
+
+
+@pytest.mark.parametrize("assumption", ["x != 0", "x > 0", "x < 0"])
+def test_stationary_point_outside_supported_domain_is_not_verified(assumption):
+    result = run("optimization_stationary", "x/x", "0", assumptions=[assumption])
+    assert result["verdict"] == "uncertain"
+    assert result["calculation_status"] == "domain_unresolved"
+    assert result["assumptions_violated"] == [assumption]
+    assert result["formal_proof"] is False
+
+
+@pytest.mark.parametrize(
+    "assumption,bounds",
+    [
+        ("x > 0", ["-1", "1"]),
+        ("x != 0", ["-1", "1"]),
+        ("x >= 0", ["-1", "0"]),
+        ("x < 0", ["0", "1"]),
+        ("x <= 0", ["-1", "1"]),
+    ],
+)
+def test_integral_cannot_use_simplifications_outside_declared_domain(assumption, bounds):
+    result = run("integrate", "sqrt(x*x)", "0", assumptions=[assumption], bounds=bounds)
+    assert result["verdict"] == "uncertain"
+    assert result["calculation_status"] == "domain_unresolved"
+    assert result["assumptions_violated"] == [assumption]
+
+
+def test_valid_calculus_domains_still_verify_and_open_endpoints_stay_unresolved():
+    valid = run("integrate", "sqrt(x*x)", "3/2", assumptions=["x>0"], bounds=["1", "2"])
+    assert valid["verdict"] == "pass"
+    zero_allowed = run("integrate", "x", "1/2", assumptions=["x>=0"], bounds=["0", "1"])
+    assert zero_allowed["verdict"] == "pass"
+    excluded = run("integrate", "x", "1/2", assumptions=["x>0"], bounds=["0", "1"])
+    assert excluded["verdict"] == "uncertain"
+    stationary = run("optimization_stationary", "(x-1)**2", "1", assumptions=["x>0"])
+    assert stationary["verdict"] == "pass"

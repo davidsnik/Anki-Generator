@@ -5,12 +5,14 @@ from __future__ import annotations
 import math
 import re
 from pathlib import Path
+from time import monotonic
 
 import pymupdf
 
 from anki_generator.ingestion.contracts import (
     BoundingBox,
     ExtractedPage,
+    ExtractionMeasurements,
     ExtractionOptions,
     ExtractionResult,
     SourceRegion,
@@ -101,6 +103,7 @@ def extract_pdf(
     warnings = []
     partial = False
     consumed_pixels, consumed_regions = 0, 0
+    render_seconds = 0.0
     with pymupdf.open(path) as document:
         if not document.is_pdf:
             raise ExtractionError("File extension is PDF but its contents are not a PDF")
@@ -144,10 +147,26 @@ def extract_pdf(
                 raise ExtractionError(f"PDF page {page_number} has invalid dimensions")
             try:
                 flags = pymupdf.TEXTFLAGS_BLOCKS & ~pymupdf.TEXT_PRESERVE_IMAGES
-                for raw in page.get_text("blocks", flags=flags, sort=True):
-                    if raw[6] == 0 and (box := _bbox(raw[:4], bounds)):
-                        blocks.append(TextBlock(bbox=box, text=raw[4], kind="text"))
-                text = "\n".join(block.text for block in blocks)
+                native_blocks = []
+                layout_structures = []
+                for raw in page.get_text("dict", flags=flags, sort=True)["blocks"]:
+                    if raw["type"] != 0:
+                        continue
+                    if box := _bbox(raw["bbox"], bounds):
+                        # Retain the established block-based tiling geometry:
+                        # saved corrections may refer to those automatic tile IDs.
+                        layout_structures.append(box)
+                    lines = []
+                    for line in raw.get("lines", []):
+                        value = "".join(span["text"] for span in line.get("spans", []))
+                        lines.append(value)
+                        if box := _bbox(line["bbox"], bounds):
+                            # MuPDF can join separate columns into one wide block.
+                            # Keep its native reading but localize each line so a
+                            # tile/correction does not inherit unrelated columns.
+                            blocks.append(TextBlock(bbox=box, text=value, kind="text"))
+                    native_blocks.append("\n".join(lines) + "\n")
+                text = "\n".join(native_blocks)
                 if len(text) > options.max_text_characters:
                     raise ExtractionError("PDF page exceeds the text-character limit")
                 images = page.get_image_info()
@@ -177,11 +196,18 @@ def extract_pdf(
                     page_warnings.append(
                         "Mathematical notation must be compared with original visual evidence"
                     )
-                if "\ufffd" in text or "\x00" in text or text.count("\u00b7") > 5:
+                if (
+                    "\ufffd" in text
+                    or any(ord(character) < 32 and character not in "\n\r\t" for character in text)
+                    or "\x7f" in text
+                    or text.count("\u00b7") > 5
+                ):
                     page_warnings.append(
                         "Suspicious characters suggest uncertain text transcription"
                     )
-                structures = [block.bbox for block in blocks]
+                structures = layout_structures + [
+                    block.bbox for block in blocks if block.kind != "text"
+                ]
                 scale = options.render_dpi / 72
                 boxes = tile_rectangles(width, height, scale, options, structures)
                 if len(boxes) > 1:
@@ -205,18 +231,26 @@ def extract_pdf(
                         raise ExtractionError("Document exceeds the configured region limit")
                     if consumed_pixels + projected_pixels > options.max_total_render_pixels:
                         raise ExtractionError("Document exceeds the total rendering-pixel budget")
-                    pixmap = page.get_pixmap(
-                        matrix=pymupdf.Matrix(scale, scale),
-                        clip=pymupdf.Rect(box),
-                        alpha=False,
-                        colorspace=pymupdf.csRGB,
-                    )
-                    if pixmap.width * pixmap.height > options.max_region_pixels:
-                        raise ExtractionError("Rendered region exceeds the configured pixel limit")
+                    render_started = monotonic()
+                    try:
+                        pixmap = page.get_pixmap(
+                            matrix=pymupdf.Matrix(scale, scale),
+                            clip=pymupdf.Rect(box),
+                            alpha=False,
+                            colorspace=pymupdf.csRGB,
+                        )
+                        if pixmap.width * pixmap.height > options.max_region_pixels:
+                            raise ExtractionError(
+                                "Rendered region exceeds the configured pixel limit"
+                            )
+                        target = (
+                            media_dir / f"page-{page_number:04d}-region-{region_index + 1:04d}.png"
+                        )
+                        pixmap.save(target)
+                    finally:
+                        render_seconds += monotonic() - render_started
                     consumed_regions += 1
                     consumed_pixels += pixmap.width * pixmap.height
-                    target = media_dir / f"page-{page_number:04d}-region-{region_index + 1:04d}.png"
-                    pixmap.save(target)
                     regions.append(
                         SourceRegion(
                             id=f"p{page_number}-r{region_index + 1}",
@@ -272,4 +306,7 @@ def extract_pdf(
         warnings=warnings,
         needs_vision=needs_vision,
         status="partial" if partial else "needs_review" if needs_vision else "complete",
+        measurements=ExtractionMeasurements(
+            pdf_render_seconds=render_seconds, pdf_regions_rendered=consumed_regions
+        ),
     )

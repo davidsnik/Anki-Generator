@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import math
 import re
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
+
+from anki_generator.services.measurements import PipelineMeasurements
 
 from .contracts import EvidenceReference
 
@@ -15,7 +18,14 @@ def normalize_quote(value: str) -> str:
 
 
 class EvidenceIndex:
-    def __init__(self, documents: list[dict[str, Any]], data_root: Path):
+    def __init__(
+        self,
+        documents: list[dict[str, Any]],
+        data_root: Path,
+        *,
+        measurements: PipelineMeasurements | None = None,
+    ):
+        self.measurements = measurements
         self.documents = {document["id"]: document for document in documents}
         self.data_root = data_root
         self.pages = {
@@ -141,6 +151,22 @@ class EvidenceIndex:
         Character ranges preserve the location within the complete stored text;
         every supplied quote on a page receives its own surrounding context.
         """
+        span = (
+            self.measurements.measure("source_retrieval", operation="original_excerpts")
+            if self.measurements is not None
+            else nullcontext()
+        )
+        with span:
+            result = self._sources(refs)
+        if self.measurements is not None:
+            self.measurements.count("source_retrieval", "requested_references", len(refs))
+            self.measurements.count("source_retrieval", "pages_returned", len(result))
+            self.measurements.count(
+                "source_retrieval", "excerpt_characters", sum(len(row["text"]) for row in result)
+            )
+        return result
+
+    def _sources(self, refs: list[EvidenceReference]) -> list[dict[str, Any]]:
         result = []
         grouped: dict[tuple[str, int], list[EvidenceReference]] = {}
         for ref in refs:
@@ -203,6 +229,18 @@ class EvidenceIndex:
         return result
 
     def image_paths(self, refs: list[EvidenceReference], *, limit: int = 12) -> list[Path]:
+        span = (
+            self.measurements.measure("source_retrieval", operation="original_image_selection")
+            if self.measurements is not None
+            else nullcontext()
+        )
+        with span:
+            result = self._image_paths(refs, limit=limit)
+        if self.measurements is not None:
+            self.measurements.count("source_retrieval", "image_paths_returned", len(result))
+        return result
+
+    def _image_paths(self, refs: list[EvidenceReference], *, limit: int) -> list[Path]:
         result: list[Path] = []
         for ref in refs:
             page = self.pages.get((ref.document_id, ref.page_number), {})

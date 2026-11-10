@@ -28,7 +28,7 @@ The established src/anki_generator/ package is retained:
 | Ingestion | ingestion/: original discovery plus subprocess-bounded extraction and visual regions |
 | Reasoning | llm/, processing/: official Responses SDK, typed contracts, evidence validation and concrete stage modules |
 | Orchestration | orchestration/: persisted queue, dispatcher/job threads, global resource admission, safe checkpoints and restart recovery |
-| Evaluation | evaluation/, api/evaluations.py and database/evaluation_entities.py: portable references, isolated paired runs, frozen snapshots, blind cases, labeled judgments and reports |
+| Developer evaluation | benchmark/: CLI, frozen private manifests/configurations, isolated production workers, offline annotations and standalone reports; evaluation/ and its API/database retain earlier records and compatibility services, outside the normal GUI |
 | Prompts | src/anki_generator/prompts/: packaged versioned templates, separate from course data |
 
 The frontend uses scoped CSS and reusable native controls instead of a Tailwind/

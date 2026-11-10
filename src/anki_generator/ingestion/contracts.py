@@ -82,6 +82,13 @@ class SourceRegion(_Contract):
         return value
 
 
+class NativeOfficeMath(_Contract):
+    source_slide_number: int = Field(ge=1)
+    transcription: str = Field(max_length=110_000)
+    origin: Literal["native_omml"] = "native_omml"
+    verification_status: Literal["unverified"] = "unverified"
+
+
 class ExtractedPage(_Contract):
     page_number: int = Field(ge=1)
     width: float = Field(gt=0, allow_inf_nan=False)
@@ -94,6 +101,7 @@ class ExtractedPage(_Contract):
     status: ExtractionStatus = "complete"
     coordinate_system: Literal["pdf-points", "image-pixels", "synthetic-preview-pixels"]
     original_rotation: int = 0
+    native_office_math: list[NativeOfficeMath] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def regions_match_page(self) -> ExtractedPage:
@@ -102,9 +110,23 @@ class ExtractedPage(_Contract):
         return self
 
 
+class ExtractionMeasurements(_Contract):
+    """Numeric observations only; absent fields were not measured.
+
+    Worker CPU/RSS describe the parser process, excluding external conversion
+    children. Peak RSS is the worker lifetime high-water mark, never a job total.
+    """
+
+    worker_wall_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    worker_cpu_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    worker_peak_rss_bytes: int | None = Field(default=None, ge=0)
+    pdf_render_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    pdf_regions_rendered: int | None = Field(default=None, ge=0)
+
+
 class ExtractionResult(_Contract):
     schema_version: Literal["1"] = "1"
-    extractor_version: Literal["1", "2"] = "2"
+    extractor_version: Literal["1", "2", "3"] = "3"
     rendered_source_path: str | None = None
     rendering_engine: str | None = None
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -114,6 +136,8 @@ class ExtractionResult(_Contract):
     status: ExtractionStatus = "complete"
     needs_vision: bool = False
     total_pages: int = Field(default=0, ge=0)
+    measurements: ExtractionMeasurements | None = None
+    unmapped_office_math: list[NativeOfficeMath] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def distinct_page_numbers(self) -> ExtractionResult:

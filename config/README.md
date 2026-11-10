@@ -29,3 +29,8 @@ The CLI skips nested symlinks, requested/marked output directories and configure
 directory names. Existing manifests require --overwrite; output may not equal or
 contain input. Identical inputs/exclusions yield identical version-1 JSON.
 This TOML does not override graphical-application settings.
+
+Developer benchmark JSON uses `benchmark.contracts.BenchmarkConfig`, separate from
+discovery TOML. Keep private source selections, model experiments and annotations
+under ignored `data/benchmarks/`; references never enter generation configuration.
+See the [developer evaluation workflow](../docs/evaluation.md).

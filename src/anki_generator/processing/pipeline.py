@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from importlib.resources import files
 from pathlib import Path
 from time import monotonic
@@ -21,6 +21,7 @@ from anki_generator.llm.provider import DEFAULT_MODEL, OpenAIProvider
 from anki_generator.orchestration.concurrency import bounded_map
 from anki_generator.processing.evidence import EvidenceIndex
 from anki_generator.services.context_budget import ensure_request_budget
+from anki_generator.services.measurements import PipelineMeasurements
 from anki_generator.services.pipeline_options import ProcessingOptions
 from anki_generator.services.semantic import ensure_vectors
 
@@ -41,8 +42,12 @@ class CoursePipeline(
     AuditStages,
     SourceCoverageStages,
 ):
+    measurements: PipelineMeasurements | None = None
+
     def __init__(self, runner: Any, run_id: str):
         self.runner, self.run_id = runner, run_id
+        factory = getattr(runner, "profiler_factory", None)
+        self.measurements = factory(run_id) if factory else None
         self.resources = runner.resources
         self.sessions, self.root = runner.session_factory, runner.data_root
         with self.sessions() as session:
@@ -68,9 +73,33 @@ class CoursePipeline(
 
     def execute(self) -> None:
         try:
-            self._execute()
+            with self._measure("pipeline"):
+                self._execute()
         finally:
             self.close()
+            if self.measurements is not None:
+                with self.sessions.begin() as session:
+                    run = session.get(Run, self.run_id)
+                    snapshot = self.measurements.snapshot()
+                    run.metrics = {
+                        **run.metrics,
+                        "developer_measurements": snapshot,
+                        "developer_measurement_attempts": [
+                            *run.metrics.get("developer_measurement_attempts", []),
+                            snapshot,
+                        ],
+                    }
+
+    def _measure(self, stage: str, *, operation: str = "stage"):
+        return (
+            self.measurements.measure(stage, operation=operation)
+            if self.measurements is not None
+            else nullcontext()
+        )
+
+    def _count(self, stage: str, name: str, amount: int | float = 1) -> None:
+        if self.measurements is not None:
+            self.measurements.count(stage, name, amount)
 
     def close(self) -> None:
         with self._state_lock:
@@ -79,7 +108,8 @@ class CoursePipeline(
             self._resource_event({"kind": "provider_cleanup_failed"})
 
     def _execute(self) -> None:
-        self._extract()
+        with self._measure("extraction"):
+            self._extract()
         self._overlay_corrections()
         if self.mode == "extract":
             return
@@ -87,21 +117,29 @@ class CoursePipeline(
             raise ValueError(
                 "Confirm which source text, images and semantic inputs will be sent to OpenAI."
             )
-        self._interpret()
+        with self._measure("interpretation"):
+            self._interpret()
         self._overlay_corrections()
-        self.evidence = EvidenceIndex(self.documents, self.root)
+        self.evidence = EvidenceIndex(self.documents, self.root, measurements=self.measurements)
         if self.mode == "interpret":
             return
         if self.mode == "revise":
             self._load_concepts()
-            self._revise_requested()
-            self._coverage(generate_missing=False)
+            with self._measure("regeneration"):
+                self._revise_requested()
+            with self._measure("coverage"):
+                self._coverage(generate_missing=False)
             return
-        self._knowledge()
-        self._source_audit()
-        self._generate()
-        self._deduplicate()
-        self._coverage(generate_missing=True)
+        with self._measure("knowledge"):
+            self._knowledge()
+        with self._measure("source_audit"):
+            self._source_audit()
+        with self._measure("generation"):
+            self._generate()
+        with self._measure("deduplication"):
+            self._deduplicate()
+        with self._measure("coverage"):
+            self._coverage(generate_missing=True)
         self._metrics()
 
     def _overlay_corrections(self) -> None:
@@ -126,6 +164,8 @@ class CoursePipeline(
     def _resource_event(self, event: dict[str, Any]) -> None:
         from anki_generator.services.task_events import add_event
 
+        if self.measurements is not None:
+            self.measurements.resource_event(event)
         messages = {
             "resource_wait": "Waiting for shared processing capacity.",
             "resource_acquired": "Shared processing capacity became available.",
@@ -258,6 +298,11 @@ class CoursePipeline(
                         self.run_id,
                         checkpoint=self._check,
                         on_event=self._resource_event,
+                        on_measurement=(
+                            self.measurements.provider_measurement
+                            if self.measurements is not None
+                            else None
+                        ),
                     )
             return self.provider
 
@@ -347,6 +392,17 @@ class CoursePipeline(
         schema: type[BaseModel],
         images: list[Path] | None = None,
     ) -> BaseModel:
+        with self._measure(stage, operation="response_unit"):
+            return self._call_unit(stage, key, payload, schema, images)
+
+    def _call_unit(
+        self,
+        stage: str,
+        key: str,
+        payload: dict[str, Any],
+        schema: type[BaseModel],
+        images: list[Path] | None = None,
+    ) -> BaseModel:
         self._check()
         self._stage(stage)
         with self._state_lock:
@@ -378,6 +434,7 @@ class CoursePipeline(
                     artifact = json.loads(saved.read_text())
                     if artifact.get("execution_contract") == contract:
                         data = schema.model_validate(artifact["data"])
+                        self._count(stage, "checkpoint_hits")
                         self._progress(stage, key, saved_path)
                         return data
             image_hashes = []
@@ -387,6 +444,7 @@ class CoursePipeline(
             fingerprint = digest({"contract": contract, "payload": payload, "images": image_hashes})
             path = self.root / "cache" / "llm" / self.course_id / f"{fingerprint}.json"
             reused = path.is_file() and not force
+            self._count(stage, "response_cache_hits" if reused else "response_cache_misses")
             if reused:
                 artifact = json.loads(path.read_text())
                 data = schema.model_validate(artifact["data"])
@@ -405,6 +463,10 @@ class CoursePipeline(
                             "max_output_tokens": self.options.output_token_budget,
                             "instructions_override": prompt,
                         },
+                    )
+                if self.measurements is not None:
+                    self.measurements.record_usage(
+                        stage, response.usage, model=response.model or self._model(stage)
                     )
                 data = schema.model_validate(response.data.model_dump())
                 artifact = {
@@ -427,6 +489,10 @@ class CoursePipeline(
             return data
 
     def _embed(self, texts: list[str], key: str) -> EmbeddingResult:
+        with self._measure("embeddings", operation="embedding_batch"):
+            return self._embed_unit(texts, key)
+
+    def _embed_unit(self, texts: list[str], key: str) -> EmbeddingResult:
         self._check()
         self._stage("embeddings")
         contract = {
@@ -446,6 +512,7 @@ class CoursePipeline(
             )
             self._forced_embedding_keys.add(key)
             reused = path.is_file() and not force
+            self._count("embeddings", "response_cache_hits" if reused else "response_cache_misses")
             if reused:
                 artifact = json.loads(path.read_text())
             else:
@@ -455,6 +522,10 @@ class CoursePipeline(
                         texts,
                         model=self.options.embedding_model,
                         dimensions=self.options.embedding_dimensions,
+                    )
+                if self.measurements is not None:
+                    self.measurements.record_usage(
+                        "embeddings", response.usage, model=response.model
                     )
                 artifact = {
                     "vectors": response.vectors,
@@ -486,4 +557,5 @@ class CoursePipeline(
             embed_call=self._embed,
             batch_size=self.options.embedding_batch_size,
             force=force,
+            measurements=self.measurements,
         )

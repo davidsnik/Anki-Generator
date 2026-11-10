@@ -140,7 +140,7 @@ class SourceCoverageStages:
             )
             return
         concept_vectors = self._vectors(self.concepts, "concept") if self.concepts else {}
-        concept_index = SemanticIndex(concept_vectors)
+        concept_index = SemanticIndex(concept_vectors, measurements=self.measurements)
         target_objects = [
             {
                 "id": key,
@@ -157,7 +157,12 @@ class SourceCoverageStages:
         self._stage("source_matching", total=len(targets))
         for key, target in targets.items():
             nearest = concept_index.search(
-                target_vectors[key], limit=self.options.semantic_candidates
+                target_vectors[key],
+                limit=self.options.semantic_candidates,
+                query_id=key,
+                stage="source_matching",
+                query_kind="source_target",
+                candidate_kind="concept",
             )
             retrieved = [
                 {
@@ -347,7 +352,7 @@ class SourceCoverageStages:
             ],
             "source_target",
         )
-        index = SemanticIndex(card_vectors)
+        index = SemanticIndex(card_vectors, measurements=self.measurements)
         by_id = {card["id"]: card for card in cards}
         self._stage("target_coverage", total=len(targets))
         gaps = []
@@ -356,7 +361,12 @@ class SourceCoverageStages:
                 gaps.append(target)
                 continue
             nearest = index.search(
-                target_vectors[target["target_key"]], limit=self.options.semantic_candidates
+                target_vectors[target["target_key"]],
+                limit=self.options.semantic_candidates,
+                query_id=target["target_key"],
+                stage="target_coverage",
+                query_kind="source_target",
+                candidate_kind="card",
             )
             retrieved = [by_id[cid] for cid, _ in nearest]
             compact_cards = [

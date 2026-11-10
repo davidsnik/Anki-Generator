@@ -124,6 +124,21 @@ for storage, migration, security, Linux compatibility and installation. Actual d
 results belong in [verification](verification.md).
 
 Legacy `install.sh`, `run.sh`, `dev.sh` and direct packaging scripts remain supported.
+Developer experiments are opt-in and never require Electron:
+
+```sh
+make benchmark
+make benchmark-smoke
+make benchmark ARGS='inventory /path/to/private.zip --output data/benchmarks/inventory.json --extract-to data/benchmarks/originals'
+make benchmark-report ARGS='data/benchmarks/runs/<run>/result.json --output data/benchmarks/report.md'
+```
+
+`make eval` aliases `make benchmark`. `make benchmark-engineering` measures authored
+math-boundary/vector-cache controls; these are engineering measurements rather
+than real-course accuracy. Ordinary tests and CI never run paid experiments.
+See [evaluation](evaluation.md) for frozen inputs, archived implementations,
+private artifacts, human annotation, model comparisons and live-call gates.
+
 The deterministic inspect workflow also remains available:
 
 ```sh

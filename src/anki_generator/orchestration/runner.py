@@ -16,6 +16,7 @@ from sqlalchemy.orm import aliased
 from anki_generator.database.entities import Run, Stage
 from anki_generator.llm import OpenAIProvider, Provider, ProviderError
 from anki_generator.orchestration.job_states import EXECUTING, RECOVERABLE, transition
+from anki_generator.services.measurements import PipelineMeasurements
 from anki_generator.services.task_events import add_event
 from anki_generator.services.task_order import queued_order
 
@@ -31,6 +32,8 @@ class DurableRunner:
         data_root: Path,
         key_getter: Callable[[], str | None],
         provider_factory: Callable[[str, dict[str, Any]], Provider] | None = None,
+        *,
+        profiler_factory: Callable[[str], PipelineMeasurements] | None = None,
     ):
         from anki_generator.orchestration.resources import GlobalResources
         from anki_generator.services.settings import get_settings
@@ -40,6 +43,7 @@ class DurableRunner:
         self.key_getter = key_getter
         self._default_provider_factory = lambda key, config: OpenAIProvider(key)
         self.provider_factory = provider_factory or self._default_provider_factory
+        self.profiler_factory = profiler_factory
         self.resources = GlobalResources(get_settings(session_factory).tasks)
         self._wake = threading.Event()
         self._stop = threading.Event()

@@ -42,7 +42,7 @@ class AuditStages:
         from anki_generator.services.semantic import SemanticIndex
 
         vectors = self._vectors(cards, "card") if cards else {}
-        index = SemanticIndex(vectors)
+        index = SemanticIndex(vectors, measurements=self.measurements)
         by_id = {card["id"]: card for card in cards}
         accepted: list[dict[str, Any]] = []
         candidate_pairs = 0
@@ -52,6 +52,10 @@ class AuditStages:
                 limit=self.options.semantic_candidates,
                 exclude={card["id"]},
                 allowed={item["id"] for item in accepted},
+                query_id=card["id"],
+                stage="deduplication",
+                query_kind="card",
+                candidate_kind="card",
             )
             candidates = [by_id[identifier] for identifier, score in nearest if score >= 0.2]
             candidate_pairs += len(candidates)

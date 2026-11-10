@@ -29,8 +29,11 @@ def embed(
             kind="configuration",
         )
     response, attempt = provider._request(
-        lambda: provider.client.embeddings.create(
-            model=model, input=texts, dimensions=dimensions, encoding_format="float"
+        lambda: provider._measured_sdk_call(
+            lambda: provider.client.embeddings.create(
+                model=model, input=texts, dimensions=dimensions, encoding_format="float"
+            ),
+            operation="embeddings",
         ),
         model=model,
         operation="embeddings",

@@ -104,7 +104,7 @@ class ExtractionStages:
                 }
             )
             cache_key = digest(
-                {"sha": document["sha256"], "options": options.model_dump(), "extractor": "2"}
+                {"sha": document["sha256"], "options": options.model_dump(), "extractor": "3"}
             )
             directory = self.root / "artifacts" / document["id"] / cache_key
             previous = document.get("extraction", {})
@@ -137,8 +137,10 @@ class ExtractionStages:
                 and document["extraction_key"] == cache_key
                 and not force_reprocess
             ):
+                self._count("extraction", "cache_hits")
                 extraction = json.loads(result_path.read_text(encoding="utf-8"))
             else:
+                self._count("extraction", "cache_misses")
                 source = (self.root / document["storage_path"]).resolve()
                 if not source.is_relative_to(self.root):
                     raise ValueError("Source storage path escapes the application data directory.")
@@ -154,9 +156,14 @@ class ExtractionStages:
                             raise ValueError(
                                 "The Office PDF rendering is missing; reprocess the whole document"
                             )
-                    with self._local_work():
-                        result = extract_document_safely(
-                            source, directory, options=options, page_numbers=selected_pages
+                    with self._measure("extraction", operation="parser_subprocess"):
+                        with self._local_work():
+                            result = extract_document_safely(
+                                source, directory, options=options, page_numbers=selected_pages
+                            )
+                    if self.measurements is not None and result.measurements is not None:
+                        self.measurements.record_subprocess(
+                            "extraction", result.measurements.model_dump(exclude_none=True)
                         )
                     extraction = result.model_dump(mode="json")
                     if selected_pages and derivative:
@@ -302,6 +309,8 @@ class ExtractionStages:
                 b["text"]
                 for b in page["blocks"]
                 if b["kind"] == "text"
+                and b["bbox"][0] < region["bbox"][2]
+                and b["bbox"][2] > region["bbox"][0]
                 and b["bbox"][1] < region["bbox"][3]
                 and b["bbox"][3] > region["bbox"][1]
             ]

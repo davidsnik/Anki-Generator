@@ -7,7 +7,8 @@ address-space, and core-dump limits; all platforms have a wall-clock timeout.
 inputs and tests. Neither function invokes a language model, executes LaTeX,
 follows document instructions, or modifies the source.
 
-The API returns `ExtractionResult`, schema version `1`, extractor version `2` (version-1 results remain readable), with the original
+The API returns `ExtractionResult`, schema version `1`, extractor version `3`
+(version-1/2 results remain readable), with the original
 SHA-256 hash, actual PDF page count (logical page count for other formats), parsed
 pages, visual regions, warnings, and an explicit status. Limits cover input bytes,
 page and region counts, text characters, decoded raster pixels, tile dimensions,
@@ -19,11 +20,11 @@ unprocessed content. It must never be interpreted as full course coverage.
 
 | Input | Implemented behavior | Fidelity and review requirements |
 | --- | --- | --- |
-| PDF | PyMuPDF text blocks, image/drawing bounds, dimensions, original page rotation, bounded overlapping PNG tiles | Low text, raster content, vector graphics, suspicious symbols, and mathematical notation request vision review. Extracted text is not a semantic verification. Password-protected or invalid files are rejected. |
+| PDF | PyMuPDF native text, individual text-line geometry, image/drawing bounds, dimensions, original page rotation, bounded overlapping PNG tiles | Low text, raster content, vector graphics, suspicious symbols/control characters, and mathematical notation request vision review. Extracted text is not a semantic verification. Password-protected or invalid files are rejected. |
 | PNG / JPEG | Pillow format verification and decoded-pixel checks; full-resolution bounded PNG tiles | Raster interpretation remains pending until an explicit multimodal stage or human review. No local OCR is claimed. Coordinates use original decoded raster pixels. EXIF orientation is not applied. |
 | UTF-8 TXT / Markdown / LaTeX | Exact source text split into bounded logical pages; convenience PNG previews | Markdown and LaTeX are source text. No HTML, TeX engine, includes, or shell escapes are executed. Preview pagination and geometry are synthetic. |
-| DOCX | When available, isolated LibreOffice renders native layout to PDF; otherwise paragraphs/tables in document order, header/footer text, embedded PNG/JPEG images | Converted pages retain visual evidence and require conversion-fidelity review. Native fallback explicitly flags missing pagination, equation objects, charts and vector layout. |
-| PPTX | When available, isolated LibreOffice renders full slides to PDF; otherwise slide text, tables, grouped text, speaker notes and embedded raster images | Converted slides retain graphics and layout. Native fallback remains explicitly limited; synthetic preview page numbers are logical, not original slide numbers. |
+| DOCX | When available, isolated LibreOffice renders native layout to PDF; otherwise paragraphs/tables in document order, header/footer text, bounded native OMML equations, embedded PNG/JPEG images | Converted pages retain visual evidence and require conversion-fidelity review. Native fallback explicitly flags missing pagination, unsupported equations, charts and vector layout. |
+| PPTX | When available, isolated LibreOffice renders full slides to PDF; otherwise slide text, tables, grouped text, speaker notes, bounded native OMML equations and embedded raster images | Converted slides retain graphics and layout. Native fallback remains explicitly limited; synthetic preview page numbers are logical, not original slide numbers. |
 
 The upload service handles ZIP import separately, with path and expansion checks;
 ZIP files are not accepted as single documents by the extraction API. OOXML ZIP
@@ -53,6 +54,47 @@ Vision transcriptions belong to the model pipeline, separately from deterministi
 extraction. Keep the original tiles, uncertainty, failed regions, and disagreements
 alongside those interpretations. A model's plausible transcription is not proof
 that a strict inequality, quantifier, or theorem assumption was read correctly.
+
+Native text hints for a visual interpretation intersect the requested rectangle in
+both axes. PDF line geometry prevents separate columns that MuPDF groups into one
+large text block from supplying contradictory, out-of-region hints. The complete
+native reading remains separately preserved. Unmapped non-whitespace control
+characters remain in that reading and receive an explicit suspicious-transcription
+warning; the extractor never guesses their intended mathematical symbols.
+
+Native Office fallback recovers a bounded subset of OMML fractions, subscripts,
+superscripts, radicals and rectangular matrices in text order. Literal equation
+text is escaped; it cannot supply executable TeX commands. Unsupported accents,
+operators, layouts, malformed arguments and excessive equation complexity produce
+an explicit unresolved marker with a bounded visible-token preview. Recovered
+structure remains unverified, and preview geometry is still synthetic. Embedded
+legacy Equation Editor objects, charts and font/layout-dependent meaning continue
+to require original-document inspection or isolated rendering. The supported
+structure follows Microsoft's [fraction](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.math.fraction)
+and [script](https://learn.microsoft.com/en-us/dotnet/api/documentformat.openxml.math.superscript)
+contracts; this is a small native reader, not a complete Office math renderer.
+
+Native Word extraction reads only defined header/footer parts, including active
+first/even-page variants and inherited content, without creating blank parts or
+missing settings. This preserves read-only interpretation and avoids python-docx
+template creation paths that are unavailable in a frozen library. Header tables
+and equations use the same bounded reader; preview geometry remains synthetic.
+
+PowerPoint conversion also retains native OMML as a separately marked,
+unverified supplement: an observed LibreOffice conversion omitted an equation that
+was still present in the original slide XML. A one-to-one slide/page count allows
+the supplement to be attached to that page without inventing a PDF rectangle.
+If counts differ, native equations remain in `unmapped_office_math`, converted
+pages are partial and their original-slide association stays unresolved. The
+converted page image remains available alongside the native reading; neither
+source is silently discarded or certified as faithful to the other.
+
+Optional numeric extraction measurements record actual parser-worker wall/CPU
+duration and lifetime peak RSS, plus PDF rasterization/PNG-save time and completed
+region count. Worker CPU/RSS exclude external Office conversion subprocesses; peak
+RSS is not a combined concurrent-job memory measurement. Direct trusted extraction
+does not label the calling process as a worker. Old artifacts omit measurements;
+cache reuse does not replay historical measurements as newly executed work.
 
 ## Offline fixtures and verification
 
@@ -88,6 +130,10 @@ Runs snapshot correction/crop revisions; a paused run cannot silently resume usi
 changed source evidence. Effective corrected text and original visual evidence are
 both supplied to later reasoning. Source transcription verification, bounded
 mathematical calculation, model judgment and human claim review remain separate.
+Verifying text on the available pages does not establish coverage of missing
+pages or unmapped equations. The effective extraction stays partial in those cases,
+including when a stale earlier overlay claimed completion. Original extraction,
+human content and correction revisions are retained.
 
 `POST /api/documents/{id}/regions` saves an original-coordinate rectangle at a chosen
 72–300 DPI, within the configured pixel budget. PDF pages, original PNG/JPEG images,

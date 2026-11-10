@@ -67,6 +67,31 @@ def _calculate(check: SymbolicCheck) -> dict[str, Any]:
         declared[match[1]][prop] = True
         parsed_assumptions.append(condition)
     symbols = {name: sp.Symbol(name, **properties) for name, properties in declared.items()}
+
+    def interval_domain_violations(variable, lower, upper) -> list[str]:
+        """Establish supported assumptions on the entire closed evaluation set.
+
+        SymPy may simplify using x>0 before substitution/integration. Checking only
+        the simplified answer would incorrectly certify evaluations at x=0 or on
+        a negative interval. Unsupported/improper endpoint cases stay unresolved.
+        """
+        violations = []
+        for condition in parsed_assumptions:
+            match = re.fullmatch(r"\s*([A-Za-z][A-Za-z0-9_]*)\s*(>=|<=|!=|>|<)\s*0\s*", condition)
+            if match[1] != str(variable):
+                continue
+            relation = match[2]
+            holds = {
+                ">": lower.is_positive is True,
+                ">=": lower.is_nonnegative is True,
+                "<": upper.is_negative is True,
+                "<=": upper.is_nonpositive is True,
+                "!=": lower.is_positive is True or upper.is_negative is True,
+            }[relation]
+            if not holds:
+                violations.append(condition)
+        return violations
+
     functions = {
         "sin": sp.sin,
         "cos": sp.cos,
@@ -252,6 +277,17 @@ def _calculate(check: SymbolicCheck) -> dict[str, Any]:
                 or not (lower.is_real and upper.is_real and lower <= upper)
             ):
                 raise UnsafeExpression("Definite integration requires ordered real constant bounds")
+            violations = interval_domain_violations(variable, lower, upper)
+            if violations:
+                return _result(
+                    "uncertain",
+                    "domain_unresolved",
+                    "The integration interval leaves the declared domain; "
+                    "assumption-dependent simplifications cannot verify this integral",
+                    operation=operation,
+                    assumptions_violated=violations,
+                    evaluation_bounds=[str(lower), str(upper)],
+                )
             lhs = sp.integrate(lhs, (variable, lower, upper))
             if lhs.has(sp.Integral, sp.Piecewise, sp.zoo, sp.oo, -sp.oo, sp.nan):
                 return _result(
@@ -294,6 +330,16 @@ def _calculate(check: SymbolicCheck) -> dict[str, Any]:
         # RHS is the claimed stationary point; this checks f'(point)=0 only.
         if rhs.free_symbols or rhs.is_real is not True:
             raise UnsafeExpression("Stationary-point check requires a real constant candidate")
+        violations = interval_domain_violations(variable, rhs, rhs)
+        if violations:
+            return _result(
+                "uncertain",
+                "domain_unresolved",
+                "The proposed stationary point lies outside the declared domain",
+                operation=operation,
+                assumptions_violated=violations,
+                evaluation_point=str(rhs),
+            )
         lhs, rhs = sp.diff(lhs, variable).subs(variable, rhs), sp.Integer(0)
         description = (
             "Derivative vanishes at the stated point; "
